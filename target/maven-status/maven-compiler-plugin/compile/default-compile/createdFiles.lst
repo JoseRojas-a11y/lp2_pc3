@@ -1,0 +1,13 @@
+client\ClientActions.class
+client\ClientMain.class
+server\model\FileMessage.class
+NewJPanel.class
+server\MainServer.class
+server\model\TextMessage.class
+server\ServerController.class
+server\model\User.class
+server\dao\UserDAO.class
+server\ClientHandler.class
+server\model\Message.class
+server\view\ServerViewConsole.class
+server\dao\DBConnection.class
