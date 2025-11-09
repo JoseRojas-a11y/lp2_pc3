@@ -1,26 +1,37 @@
 // src/server/MainServer.java
 package server;
+
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.io.IOException;
+import server.dao.UserDAO;
 
 public class MainServer {
     public static void main(String[] args){
-        
-        int port = 5340;
+        int portTCP = 5340;
+        int portWS  = 8081;
+
         ServerController controller = new ServerController();
-        try (ServerSocket serverSocket = new ServerSocket(port)){
-            System.out.println("Servidor escuchando en puerto " + port);
-            
+
+        // Arrancar WebSocket en un hilo separado
+        new Thread(() -> {
+            ChatWebSocketServer wsServer = new ChatWebSocketServer(portWS, new UserDAO());
+            wsServer.start();
+            System.out.println("WebSocket activo en ws://localhost:" + portWS);
+        }).start();
+
+        // Servidor TCP tradicional
+        try (ServerSocket serverSocket = new ServerSocket(portTCP)){
+            System.out.println("Servidor TCP escuchando en puerto " + portTCP);
+
             while(true){
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("Nueva conexión: " + clientSocket.getRemoteSocketAddress());
-                
+                System.out.println("Nueva conexión TCP: " + clientSocket.getRemoteSocketAddress());
+
                 ClientHandler handler = new ClientHandler(clientSocket, controller);
-                Thread t = new Thread(handler);
-                t.start();
+                new Thread(handler).start();
             }
-            
+
         } catch(IOException e){
             e.printStackTrace();
         }
