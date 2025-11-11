@@ -33,6 +33,8 @@ public class ChatWebSocketServer extends WebSocketServer {
 
     // Conexión -> usuario autenticado
     private final ConcurrentHashMap<WebSocket, User> sessions = new ConcurrentHashMap<>();
+    // Usuarios en videollamada
+    private final ConcurrentHashMap<String, WebSocket> videoRoomUsers = new ConcurrentHashMap<>();
     private final ExecutorService pool = Executors.newCachedThreadPool();
     private final Gson gson = new Gson();
     private final UserDAO userDAO;
@@ -68,7 +70,19 @@ public class ChatWebSocketServer extends WebSocketServer {
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
         User u = sessions.remove(conn);
         if (u != null) {
-            System.out.println("WS cerrado: " + u.getUsername() + " (code=" + code + ")");
+            String username = u.getUsername();
+            System.out.println("WS cerrado: " + username + " (code=" + code + ")");
+            
+            // Si estaba en videollamada, notificar a los demás
+            if (videoRoomUsers.containsKey(username)) {
+                videoRoomUsers.remove(username);
+                for (WebSocket c : videoRoomUsers.values()) {
+                    if (c.isOpen()) {
+                        c.send(json("type", "user_left", "username", username));
+                    }
+                }
+            }
+            
             broadcastJson(json("type","userlist","users", currentUsers()));
         }
     }
@@ -119,7 +133,7 @@ public class ChatWebSocketServer extends WebSocketServer {
 
                 // Aquí podrías persistir si quieres: userDAO.saveMessage(u.getUsername(), content, ts);
 
-                // Broadcast en formato JSON para el frontend JS
+                // Broadcast en formato JSON para el frontend JS (incluye al remitente)
                 broadcastJson(json(
                     "type","text",
                     "from", u.getUsername(),
@@ -147,8 +161,8 @@ public class ChatWebSocketServer extends WebSocketServer {
                 System.out.println("📎 Archivo recibido de " + u.getUsername() + 
                                    ": " + filename + " (" + mimetype + ", " + size + " bytes)");
                 
-                // Broadcast del archivo con todos sus metadatos
-                broadcastJson(json(
+                // Broadcast del archivo a todos EXCEPTO al remitente
+                String payload = json(
                     "type", "file",
                     "from", u.getUsername(),
                     "filename", filename,
@@ -156,7 +170,111 @@ public class ChatWebSocketServer extends WebSocketServer {
                     "size", size,
                     "data", data,
                     "timestamp", ts
-                ));
+                );
+                
+                for (WebSocket c : sessions.keySet()) {
+                    // Enviar solo si NO es el remitente
+                    if (c.isOpen() && c != conn) {
+                        c.send(payload);
+                    }
+                }
+                break;
+            }
+
+            // ========== Videollamada Grupal ==========
+            case "join_room": {
+                User u = sessions.get(conn);
+                if (u == null) { conn.close(1008,"Not authed"); return; }
+                
+                String username = u.getUsername();
+                
+                // Enviar lista de usuarios ya en la sala al nuevo usuario
+                List<String> currentRoomUsers = new ArrayList<>(videoRoomUsers.keySet());
+                conn.send(json("type", "room_users", "users", currentRoomUsers));
+                
+                // Agregar usuario a la sala
+                videoRoomUsers.put(username, conn);
+                
+                // Notificar a todos los demás que un nuevo usuario se unió
+                for (Map.Entry<String, WebSocket> entry : videoRoomUsers.entrySet()) {
+                    if (!entry.getKey().equals(username) && entry.getValue().isOpen()) {
+                        entry.getValue().send(json("type", "user_joined", "username", username));
+                    }
+                }
+                
+                System.out.println("📹 " + username + " se unió a la videollamada. Total: " + videoRoomUsers.size());
+                break;
+            }
+
+            case "leave_room": {
+                User u = sessions.get(conn);
+                if (u == null) return;
+                
+                String username = u.getUsername();
+                videoRoomUsers.remove(username);
+                
+                // Notificar a todos que el usuario salió
+                for (WebSocket c : videoRoomUsers.values()) {
+                    if (c.isOpen()) {
+                        c.send(json("type", "user_left", "username", username));
+                    }
+                }
+                
+                System.out.println("📹 " + username + " salió de la videollamada. Total: " + videoRoomUsers.size());
+                break;
+            }
+
+            case "webrtc_offer": {
+                User u = sessions.get(conn);
+                if (u == null) { conn.close(1008,"Not authed"); return; }
+                
+                String to = safeStr(map.get("to"));
+                Object offer = map.get("offer");
+                
+                WebSocket targetConn = videoRoomUsers.get(to);
+                if (targetConn != null && targetConn.isOpen()) {
+                    targetConn.send(json(
+                        "type", "webrtc_offer",
+                        "from", u.getUsername(),
+                        "offer", offer
+                    ));
+                }
+                break;
+            }
+
+            case "webrtc_answer": {
+                User u = sessions.get(conn);
+                if (u == null) { conn.close(1008,"Not authed"); return; }
+                
+                String to = safeStr(map.get("to"));
+                Object answer = map.get("answer");
+                
+                WebSocket targetConn = videoRoomUsers.get(to);
+                if (targetConn != null && targetConn.isOpen()) {
+                    targetConn.send(json(
+                        "type", "webrtc_answer",
+                        "from", u.getUsername(),
+                        "answer", answer
+                    ));
+                }
+                break;
+            }
+
+            case "webrtc_ice": {
+                User u = sessions.get(conn);
+                if (u == null) { conn.close(1008,"Not authed"); return; }
+                
+                String to = safeStr(map.get("to"));
+                Object candidate = map.get("candidate");
+                
+                WebSocket targetConn = videoRoomUsers.get(to);
+                if (targetConn != null && targetConn.isOpen()) {
+                    targetConn.send(json(
+                        "type", "webrtc_ice",
+                        "from", u.getUsername(),
+                        "candidate", candidate
+                    ));
+                }
                 break;
             }
 

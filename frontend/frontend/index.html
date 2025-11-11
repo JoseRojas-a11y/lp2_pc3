@@ -44,6 +44,12 @@
           <span class="header-title">NextTalk</span>
         </div>
         <div class="chat-actions">
+          <button id="btnJoinCall" class="icon-btn video-call-btn" title="Unirse a videollamada grupal">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M16 10L22 7V17L16 14V10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </button>
           <span class="icon bell">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M10 2C8.5 2 7.5 3 7.5 4.5V5C5.5 5.5 4 7 4 9V13L2 15V16H18V15L16 13V9C16 7 14.5 5.5 12.5 5V4.5C12.5 3 11.5 2 10 2Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -80,6 +86,60 @@
       </div>
     </div>
   </section>
+
+  <!-- Modal de Videollamada Grupal -->
+  <div id="videoCallModal" class="modal hidden">
+    <div class="modal-content video-call-modal">
+      <div class="video-call-header">
+        <div class="call-info">
+          <h3>Videollamada Grupal</h3>
+          <span id="participantCount" class="participant-count">0 participantes</span>
+        </div>
+        <button id="btnLeaveCall" class="leave-call-btn">Salir de la llamada</button>
+      </div>
+      
+      <div class="video-call-container">
+        <!-- Grid de videos de participantes -->
+        <div id="videoGrid" class="video-grid">
+          <!-- Los videos se agregarán dinámicamente aquí -->
+        </div>
+        
+        <!-- Panel lateral con lista de participantes -->
+        <div class="call-sidebar">
+          <div class="call-sidebar-header">
+            <h4>Participantes</h4>
+          </div>
+          <ul id="callParticipants" class="call-participants-list">
+            <!-- Lista dinámica de participantes -->
+          </ul>
+        </div>
+      </div>
+      
+      <!-- Controles de la llamada -->
+      <div class="video-call-controls">
+        <button id="btnToggleMic" class="control-btn mic-btn" title="Silenciar micrófono">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z"/>
+            <path d="M17 11C17 14.31 14.31 17 11 17M7 11C7 14.31 9.69 17 13 17M12 17V21M9 21H15" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        
+        <button id="btnToggleCam" class="control-btn cam-btn" title="Desactivar cámara">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="6" width="14" height="12" rx="2" stroke="white" stroke-width="1.8"/>
+            <path d="M16 10L22 7V17L16 14V10Z" stroke="white" stroke-width="1.8"/>
+          </svg>
+        </button>
+        
+        <button id="btnShareScreen" class="control-btn screen-btn" title="Compartir pantalla">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="3" width="20" height="14" rx="2" stroke="white" stroke-width="1.8"/>
+            <path d="M8 21h8M12 17v4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

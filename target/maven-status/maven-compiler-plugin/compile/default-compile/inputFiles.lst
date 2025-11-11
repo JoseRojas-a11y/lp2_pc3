@@ -1,5 +1,3 @@
-C:\Users\jose\Desktop\PC3\src\main\java\client\ClientActions.java
-C:\Users\jose\Desktop\PC3\src\main\java\client\ClientMain.java
 C:\Users\jose\Desktop\PC3\src\main\java\client\command\Command.java
 C:\Users\jose\Desktop\PC3\src\main\java\client\command\CommandFactory.java
 C:\Users\jose\Desktop\PC3\src\main\java\client\command\LogoutCommand.java
@@ -11,7 +9,6 @@ C:\Users\jose\Desktop\PC3\src\main\java\client\core\ClientMain.java
 C:\Users\jose\Desktop\PC3\src\main\java\client\service\FileService.java
 C:\Users\jose\Desktop\PC3\src\main\java\client\service\MessageHandler.java
 C:\Users\jose\Desktop\PC3\src\main\java\client\util\ConsoleReader.java
-C:\Users\jose\Desktop\PC3\src\main\java\NewJPanel.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\ChatWebSocketServer.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\ClientHandler.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\dao\DBConnection.java

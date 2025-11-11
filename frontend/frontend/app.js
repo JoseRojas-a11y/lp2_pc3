@@ -11,12 +11,32 @@ const seccionLogin = $('#login');
 const seccionChat  = $('#chat');
 const cajaMensajes = $('#messages');
 
+// Variables para videollamada grupal
+let inCall = false;
+let localStream = null;
+let peerConnections = {}; // {username: RTCPeerConnection}
+let participants = new Set(); // Lista de participantes en la llamada
+
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
+
 // Eventos de UI
 $('#btnLogin').onclick = conectar;
 $('#send').onclick = enviarMensaje;
 $('#txt').addEventListener('keydown', e => { if (e.key === 'Enter') enviarMensaje(); });
 $('#file').onchange = enviarArchivo;
 $('#btnLogout').onclick = cerrarSesion;
+
+// Eventos de videollamada
+$('#btnJoinCall').onclick = toggleVideoCall;
+$('#btnLeaveCall').onclick = leaveVideoCall;
+$('#btnToggleMic').onclick = toggleMicrophone;
+$('#btnToggleCam').onclick = toggleCamera;
+$('#btnShareScreen').onclick = shareScreen;
 
 // Establece la conexión y realiza autenticación
 function conectar() {
@@ -92,6 +112,37 @@ function manejarJson(texto) {
 
     case 'error':
       notificarSistema(`Error: ${m.msg || 'desconocido'}`);
+      break;
+
+    // ========== Mensajes de Videollamada Grupal ==========
+    case 'room_users':
+      // Recibir lista de usuarios ya en la sala
+      handleRoomUsers(m.users);
+      break;
+
+    case 'user_joined':
+      // Nuevo usuario se unió a la llamada
+      handleUserJoined(m.username);
+      break;
+
+    case 'user_left':
+      // Usuario salió de la llamada
+      handleUserLeft(m.username);
+      break;
+
+    case 'webrtc_offer':
+      // Recibir oferta WebRTC de otro peer
+      handleWebRTCOffer(m.from, m.offer);
+      break;
+
+    case 'webrtc_answer':
+      // Recibir respuesta WebRTC
+      handleWebRTCAnswer(m.from, m.answer);
+      break;
+
+    case 'webrtc_ice':
+      // Recibir ICE candidate
+      handleWebRTCIce(m.from, m.candidate);
       break;
   }
 }
@@ -355,4 +406,424 @@ function obtenerEmojiPorExtension(ext) {
   };
   
   return extensiones[ext] || '📎';
+}
+
+// ==================== FUNCIONES DE VIDEOLLAMADA GRUPAL ====================
+
+// Toggle unirse/salir de la videollamada
+async function toggleVideoCall() {
+  if (inCall) {
+    leaveVideoCall();
+  } else {
+    await joinVideoCall();
+  }
+}
+
+// Unirse a la videollamada
+async function joinVideoCall() {
+  try {
+    // Obtener permisos de cámara y micrófono
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+
+    inCall = true;
+    $('#videoCallModal').classList.remove('hidden');
+    $('#btnJoinCall').classList.add('in-call');
+
+    // Agregar video propio al grid
+    addLocalVideo();
+
+    // Notificar al servidor que nos unimos a la sala
+    ws.send(JSON.stringify({ type: 'join_room' }));
+
+    notificarSistema('Te has unido a la videollamada');
+  } catch (err) {
+    console.error('Error al acceder a medios:', err);
+    alert('No se pudo acceder a la cámara/micrófono. Por favor verifica los permisos.');
+  }
+}
+
+// Salir de la videollamada
+function leaveVideoCall() {
+  // Cerrar todas las conexiones peer
+  Object.values(peerConnections).forEach(pc => pc.close());
+  peerConnections = {};
+
+  // Detener stream local
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+
+  // Limpiar UI
+  $('#videoGrid').innerHTML = '';
+  $('#callParticipants').innerHTML = '';
+  $('#videoCallModal').classList.add('hidden');
+  $('#btnJoinCall').classList.remove('in-call');
+
+  participants.clear();
+  inCall = false;
+
+  // Notificar al servidor
+  ws.send(JSON.stringify({ type: 'leave_room' }));
+
+  notificarSistema('Has salido de la videollamada');
+}
+
+// Agregar video local al grid
+function addLocalVideo() {
+  const videoGrid = $('#videoGrid');
+  
+  const videoContainer = document.createElement('div');
+  videoContainer.className = 'video-participant local';
+  videoContainer.id = 'video-local';
+  
+  const video = document.createElement('video');
+  video.srcObject = localStream;
+  video.autoplay = true;
+  video.muted = true;
+  video.playsinline = true;
+  
+  const info = document.createElement('div');
+  info.className = 'participant-info';
+  info.textContent = `${yo} (Tú)`;
+  
+  videoContainer.appendChild(video);
+  videoContainer.appendChild(info);
+  videoGrid.appendChild(videoContainer);
+
+  // Agregar a lista de participantes
+  addParticipantToList(yo, true);
+  updateParticipantCount();
+}
+
+// Manejar lista de usuarios ya en la sala
+async function handleRoomUsers(users) {
+  console.log('Usuarios en la sala:', users);
+  
+  for (const user of users) {
+    if (user !== yo) {
+      participants.add(user);
+      await createPeerConnection(user, true); // true = somos el que llama
+    }
+  }
+}
+
+// Manejar nuevo usuario que se unió
+async function handleUserJoined(username) {
+  console.log('Usuario se unió:', username);
+  notificarSistema(`${username} se unió a la videollamada`);
+  
+  if (username !== yo && inCall) {
+    participants.add(username);
+    // El nuevo usuario nos enviará una oferta
+  }
+}
+
+// Manejar usuario que salió
+function handleUserLeft(username) {
+  console.log('Usuario salió:', username);
+  notificarSistema(`${username} salió de la videollamada`);
+  
+  participants.delete(username);
+  
+  // Cerrar conexión peer
+  if (peerConnections[username]) {
+    peerConnections[username].close();
+    delete peerConnections[username];
+  }
+  
+  // Remover video del grid
+  const videoElement = document.getElementById(`video-${username}`);
+  if (videoElement) videoElement.remove();
+  
+  // Remover de lista
+  removeParticipantFromList(username);
+  updateParticipantCount();
+}
+
+// Crear conexión peer con otro usuario
+async function createPeerConnection(username, isInitiator) {
+  console.log(`Creando peer connection con ${username}, iniciador: ${isInitiator}`);
+  
+  const pc = new RTCPeerConnection(rtcConfig);
+  peerConnections[username] = pc;
+
+  // Agregar tracks locales
+  localStream.getTracks().forEach(track => {
+    pc.addTrack(track, localStream);
+  });
+
+  // Manejar tracks remotos
+  pc.ontrack = (event) => {
+    console.log(`Track remoto recibido de ${username}`);
+    addRemoteVideo(username, event.streams[0]);
+  };
+
+  // Manejar ICE candidates
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      ws.send(JSON.stringify({
+        type: 'webrtc_ice',
+        to: username,
+        candidate: event.candidate
+      }));
+    }
+  };
+
+  // Manejar estado de conexión
+  pc.onconnectionstatechange = () => {
+    console.log(`Estado de conexión con ${username}: ${pc.connectionState}`);
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      handleUserLeft(username);
+    }
+  };
+
+  // Si somos el iniciador, crear oferta
+  if (isInitiator) {
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      
+      ws.send(JSON.stringify({
+        type: 'webrtc_offer',
+        to: username,
+        offer: offer
+      }));
+    } catch (err) {
+      console.error('Error al crear oferta:', err);
+    }
+  }
+
+  return pc;
+}
+
+// Manejar oferta WebRTC recibida
+async function handleWebRTCOffer(from, offer) {
+  console.log(`Oferta WebRTC recibida de ${from}`);
+  
+  if (!inCall) return;
+  
+  participants.add(from);
+  
+  // Crear peer connection si no existe
+  if (!peerConnections[from]) {
+    await createPeerConnection(from, false);
+  }
+  
+  const pc = peerConnections[from];
+  
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    
+    ws.send(JSON.stringify({
+      type: 'webrtc_answer',
+      to: from,
+      answer: answer
+    }));
+  } catch (err) {
+    console.error('Error al manejar oferta:', err);
+  }
+}
+
+// Manejar respuesta WebRTC recibida
+async function handleWebRTCAnswer(from, answer) {
+  console.log(`Respuesta WebRTC recibida de ${from}`);
+  
+  const pc = peerConnections[from];
+  if (pc) {
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    } catch (err) {
+      console.error('Error al manejar respuesta:', err);
+    }
+  }
+}
+
+// Manejar ICE candidate recibido
+async function handleWebRTCIce(from, candidate) {
+  const pc = peerConnections[from];
+  if (pc && candidate) {
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.error('Error al agregar ICE candidate:', err);
+    }
+  }
+}
+
+// Agregar video remoto al grid
+function addRemoteVideo(username, stream) {
+  // Verificar si ya existe
+  let videoContainer = document.getElementById(`video-${username}`);
+  
+  if (!videoContainer) {
+    const videoGrid = $('#videoGrid');
+    videoContainer = document.createElement('div');
+    videoContainer.className = 'video-participant';
+    videoContainer.id = `video-${username}`;
+    
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.playsinline = true;
+    
+    const info = document.createElement('div');
+    info.className = 'participant-info';
+    info.textContent = username;
+    
+    videoContainer.appendChild(video);
+    videoContainer.appendChild(info);
+    videoGrid.appendChild(videoContainer);
+    
+    addParticipantToList(username, false);
+    updateParticipantCount();
+  }
+  
+  const video = videoContainer.querySelector('video');
+  video.srcObject = stream;
+}
+
+// Agregar participante a la lista
+function addParticipantToList(username, isLocal) {
+  const list = $('#callParticipants');
+  
+  const item = document.createElement('li');
+  item.className = 'call-participant-item' + (isLocal ? ' local' : '');
+  item.id = `participant-${username}`;
+  
+  const avatar = document.createElement('div');
+  avatar.className = 'participant-avatar';
+  avatar.textContent = username.charAt(0).toUpperCase();
+  
+  const name = document.createElement('span');
+  name.textContent = username + (isLocal ? ' (Tú)' : '');
+  
+  const status = document.createElement('div');
+  status.className = 'participant-status';
+  
+  const statusIcon = document.createElement('div');
+  statusIcon.className = 'status-icon';
+  status.appendChild(statusIcon);
+  
+  item.appendChild(avatar);
+  item.appendChild(name);
+  item.appendChild(status);
+  list.appendChild(item);
+}
+
+// Remover participante de la lista
+function removeParticipantFromList(username) {
+  const item = document.getElementById(`participant-${username}`);
+  if (item) item.remove();
+}
+
+// Actualizar contador de participantes
+function updateParticipantCount() {
+  const count = document.querySelectorAll('.video-participant').length;
+  $('#participantCount').textContent = `${count} participante${count !== 1 ? 's' : ''}`;
+  
+  // Actualizar layout del grid
+  $('#videoGrid').setAttribute('data-count', count);
+}
+
+// Toggle micrófono
+function toggleMicrophone() {
+  if (!localStream) return;
+  
+  const audioTrack = localStream.getAudioTracks()[0];
+  if (audioTrack) {
+    audioTrack.enabled = !audioTrack.enabled;
+    const btn = $('#btnToggleMic');
+    
+    if (audioTrack.enabled) {
+      btn.classList.remove('muted');
+      btn.title = 'Silenciar micrófono';
+    } else {
+      btn.classList.add('muted');
+      btn.title = 'Activar micrófono';
+    }
+    
+    // Actualizar UI del video local
+    const localInfo = document.querySelector('#video-local .participant-info');
+    if (localInfo) {
+      if (audioTrack.enabled) {
+        localInfo.classList.remove('muted');
+      } else {
+        localInfo.classList.add('muted');
+      }
+    }
+  }
+}
+
+// Toggle cámara
+function toggleCamera() {
+  if (!localStream) return;
+  
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (videoTrack) {
+    videoTrack.enabled = !videoTrack.enabled;
+    const btn = $('#btnToggleCam');
+    
+    if (videoTrack.enabled) {
+      btn.classList.remove('active');
+      btn.title = 'Desactivar cámara';
+    } else {
+      btn.classList.add('active');
+      btn.title = 'Activar cámara';
+    }
+  }
+}
+
+// Compartir pantalla
+async function shareScreen() {
+  try {
+    const screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: 'always' },
+      audio: false
+    });
+    
+    const screenTrack = screenStream.getVideoTracks()[0];
+    
+    // Reemplazar track de video en todas las conexiones peer
+    for (const [username, pc] of Object.entries(peerConnections)) {
+      const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (sender) {
+        sender.replaceTrack(screenTrack);
+      }
+    }
+    
+    // Actualizar video local
+    const localVideo = document.querySelector('#video-local video');
+    if (localVideo) {
+      localVideo.srcObject = new MediaStream([screenTrack]);
+    }
+    
+    // Cuando se detenga compartir, volver a la cámara
+    screenTrack.onended = () => {
+      const videoTrack = localStream.getVideoTracks()[0];
+      for (const [username, pc] of Object.entries(peerConnections)) {
+        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(videoTrack);
+        }
+      }
+      
+      const localVideo = document.querySelector('#video-local video');
+      if (localVideo) {
+        localVideo.srcObject = localStream;
+      }
+    };
+    
+    $('#btnShareScreen').classList.add('active');
+  } catch (err) {
+    console.error('Error al compartir pantalla:', err);
+  }
 }
