@@ -85,6 +85,11 @@ function manejarJson(texto) {
       renderizarTexto(m.from, m.content, m.timestamp, m.from === yo);
       break;
 
+    case 'file':
+      // Recibir archivo con metadatos y tipo MIME correcto
+      recibirArchivoRemoto(m.from, m.filename, m.mimetype, m.data, m.timestamp);
+      break;
+
     case 'error':
       notificarSistema(`Error: ${m.msg || 'desconocido'}`);
       break;
@@ -104,12 +109,31 @@ async function enviarArchivo(e) {
   const f = e.target.files[0];
   if (!f || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-  // En este servidor enviamos directamente binario; si quieres metadatos previos, envíalos como JSON (type:filemeta)
-  const buf = await f.arrayBuffer();
-  ws.send(buf);
-  const url = URL.createObjectURL(new Blob([buf], { type: f.type || 'application/octet-stream' }));
-  renderizarTexto("yo", f.name + " - enviado", Date.now(), true);
-  e.target.value = '';
+  try {
+    // Leer archivo como ArrayBuffer
+    const buf = await f.arrayBuffer();
+    
+    // Convertir a Base64
+    const base64 = arrayBufferToBase64(buf);
+    
+    // Enviar como JSON con metadatos completos
+    ws.send(JSON.stringify({
+      type: 'file',
+      filename: f.name,
+      mimetype: f.type || 'application/octet-stream',
+      size: f.size,
+      data: base64
+    }));
+
+    // Mostrar archivo propio en el chat
+    const url = URL.createObjectURL(new Blob([buf], { type: f.type || 'application/octet-stream' }));
+    renderizarArchivoEnChat(url, f.name, yo, true, Date.now());
+    
+    e.target.value = '';
+  } catch (err) {
+    console.error('Error al enviar archivo:', err);
+    notificarSistema('Error al enviar el archivo');
+  }
 }
 
 // Cierra sesión y limpia UI
@@ -209,3 +233,126 @@ function escaparHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function escaparAtributo(s) { return String(s).replace(/"/g, '&quot;'); }
+
+// ==================== FUNCIONES DE MANEJO DE ARCHIVOS ====================
+
+// Convertir ArrayBuffer a Base64
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Convertir Base64 a ArrayBuffer
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+// Recibir archivo de otro usuario
+function recibirArchivoRemoto(desde, filename, mimetype, base64Data, timestamp) {
+  try {
+    // Convertir base64 a blob con el tipo MIME correcto
+    const arrayBuffer = base64ToArrayBuffer(base64Data);
+    const blob = new Blob([arrayBuffer], { type: mimetype });
+    const url = URL.createObjectURL(blob);
+    
+    // Renderizar en el chat
+    renderizarArchivoEnChat(url, filename, desde, false, timestamp);
+  } catch (err) {
+    console.error('Error al recibir archivo:', err);
+    notificarSistema(`Error al recibir archivo de ${desde}`);
+  }
+}
+
+// Renderizar archivo en el chat
+function renderizarArchivoEnChat(url, nombre, desde, mio = false, timestamp = Date.now()) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-container' + (mio ? ' mine' : '');
+  
+  const avatarSvg = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <clipPath id="clip-circle">
+      <circle cx="20" cy="20" r="20"/>
+    </clipPath>
+    <circle cx="20" cy="20" r="20" fill="#BBBCBC"/>
+    <g clip-path="url(#clip-circle)">
+      <circle cx="20" cy="15" r="6.5" fill="#F2F2F2"/>
+      <ellipse cx="20" cy="38" rx="14" ry="12" fill="#F2F2F2"/>
+    </g>
+  </svg>`;
+
+  // Obtener extensión y emoji del archivo
+  const extension = nombre.includes('.') ? nombre.split('.').pop().toUpperCase() : 'FILE';
+  const emoji = obtenerEmojiPorExtension(extension);
+  
+  wrap.innerHTML = `
+    <div class="msg-avatar">
+      ${avatarSvg}
+      <div class="msg-username">${escaparHtml(desde)}</div>
+    </div>
+    <div class="msg-bubble ${mio ? 'me' : ''}">
+      <div class="msg-content file-message">
+        <div class="file-icon">${emoji}</div>
+        <div class="file-info">
+          <a class="file-link" href="${url}" download="${escaparAtributo(nombre)}">${escaparHtml(nombre)}</a>
+          <span class="file-badge">${extension}</span>
+        </div>
+      </div>
+      <div class="msg-time">${formatearHora(timestamp)}</div>
+    </div>
+  `;
+  cajaMensajes.appendChild(wrap);
+  cajaMensajes.scrollTop = cajaMensajes.scrollHeight;
+}
+
+// Obtener emoji según extensión de archivo
+function obtenerEmojiPorExtension(ext) {
+  const extensiones = {
+    // Imágenes
+    'JPG': '🖼️', 'JPEG': '🖼️', 'PNG': '🖼️', 'GIF': '🖼️', 'SVG': '🖼️', 
+    'WEBP': '🖼️', 'BMP': '🖼️', 'ICO': '🖼️',
+    
+    // Documentos
+    'PDF': '📄', 'DOC': '📝', 'DOCX': '📝', 'TXT': '📝', 'RTF': '📝',
+    'ODT': '📝', 'PAGES': '📝',
+    
+    // Hojas de cálculo
+    'XLS': '📊', 'XLSX': '📊', 'CSV': '📊', 'ODS': '📊', 'NUMBERS': '📊',
+    
+    // Presentaciones
+    'PPT': '📊', 'PPTX': '📊', 'KEY': '📊', 'ODP': '📊',
+    
+    // Archivos comprimidos
+    'ZIP': '🗜️', 'RAR': '🗜️', '7Z': '🗜️', 'TAR': '🗜️', 'GZ': '🗜️',
+    'BZ2': '🗜️', 'XZ': '🗜️',
+    
+    // Audio
+    'MP3': '🎵', 'WAV': '🎵', 'OGG': '🎵', 'M4A': '🎵', 'FLAC': '🎵',
+    'AAC': '🎵', 'WMA': '🎵', 'OPUS': '🎵',
+    
+    // Video
+    'MP4': '🎬', 'AVI': '🎬', 'MKV': '🎬', 'MOV': '🎬', 'WMV': '🎬',
+    'FLV': '🎬', 'WEBM': '🎬', 'M4V': '🎬',
+    
+    // Código fuente
+    'JS': '💻', 'JAVA': '💻', 'PY': '💻', 'HTML': '💻', 'CSS': '💻',
+    'JSON': '💻', 'XML': '💻', 'CPP': '💻', 'C': '💻', 'H': '💻',
+    'PHP': '💻', 'SQL': '💻', 'SH': '💻', 'BAT': '💻', 'TS': '💻',
+    'JSX': '💻', 'VUE': '💻', 'GO': '💻', 'RUST': '💻', 'SWIFT': '💻',
+    
+    // Otros
+    'EXE': '⚙️', 'DLL': '⚙️', 'APK': '📱', 'IPA': '📱',
+    'FONT': '🔤', 'TTF': '🔤', 'OTF': '🔤', 'WOFF': '🔤'
+  };
+  
+  return extensiones[ext] || '📎';
+}

@@ -1,13 +1,20 @@
 package server;
 
-import org.java_websocket.server.WebSocketServer;
-import org.java_websocket.WebSocket;
-import org.java_websocket.handshake.ClientHandshake;
-
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.concurrent.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import org.java_websocket.WebSocket;
+import org.java_websocket.handshake.ClientHandshake;
+import org.java_websocket.server.WebSocketServer;
+
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
@@ -117,6 +124,37 @@ public class ChatWebSocketServer extends WebSocketServer {
                     "type","text",
                     "from", u.getUsername(),
                     "content", content,
+                    "timestamp", ts
+                ));
+                break;
+            }
+
+            case "file": {
+                User u = sessions.get(conn);
+                if (u == null) { conn.close(1008,"Not authed"); return; }
+                
+                String filename = safeStr(map.get("filename"));
+                String mimetype = safeStr(map.get("mimetype"));
+                Object data = map.get("data");
+                Object size = map.get("size");
+                long ts = System.currentTimeMillis();
+                
+                if (filename.isEmpty() || data == null) {
+                    conn.send(json("type","error","msg","Archivo inválido"));
+                    return;
+                }
+                
+                System.out.println("📎 Archivo recibido de " + u.getUsername() + 
+                                   ": " + filename + " (" + mimetype + ", " + size + " bytes)");
+                
+                // Broadcast del archivo con todos sus metadatos
+                broadcastJson(json(
+                    "type", "file",
+                    "from", u.getUsername(),
+                    "filename", filename,
+                    "mimetype", mimetype,
+                    "size", size,
+                    "data", data,
                     "timestamp", ts
                 ));
                 break;

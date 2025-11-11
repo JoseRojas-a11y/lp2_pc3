@@ -483,3 +483,62 @@ label.file input { display: none; }
 }
 
 a.file { text-decoration: none; color: inherit; }
+
+/* ==================== ESTILOS PARA ARCHIVOS ==================== */
+
+.file-message {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+}
+
+.file-icon {
+    font-size: 2rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+}
+
+.file-link {
+    text-decoration: none;
+    color: inherit;
+    font-weight: 500;
+    font-size: 0.95rem;
+    word-break: break-word;
+    transition: opacity 0.2s;
+    display: block;
+}
+
+.file-link:hover {
+    opacity: 0.7;
+    text-decoration: underline;
+}
+
+.msg-bubble.me .file-link {
+    color: white;
+}
+
+.file-badge {
+    display: inline-block;
+    background: rgba(0, 0, 0, 0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    align-self: flex-start;
+}
+
+.msg-bubble.me .file-badge {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+}
