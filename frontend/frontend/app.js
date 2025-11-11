@@ -28,7 +28,7 @@ function conectar() {
   }
 
   // Ajusta host/puerto si es necesario
-  ws = new WebSocket('ws://localhost:8081/');
+  ws = new WebSocket('ws://10.159.125.105:8081/');
 
   ws.onopen = () => {
     ws.send(JSON.stringify({ type:'auth', username: usuario, password: contrasena }));
@@ -41,7 +41,6 @@ function conectar() {
       // Binario recibido → lo tratamos como archivo descargable
       const blob = ev.data;
       const url = URL.createObjectURL(blob);
-      renderizarArchivo(url, 'archivo_recibido');
     }
   };
 
@@ -109,7 +108,7 @@ async function enviarArchivo(e) {
   const buf = await f.arrayBuffer();
   ws.send(buf);
   const url = URL.createObjectURL(new Blob([buf], { type: f.type || 'application/octet-stream' }));
-  renderizarArchivo(url, f.name);
+  renderizarTexto("yo", f.name + " - enviado", Date.now(), true);
   e.target.value = '';
 }
 

@@ -37,7 +37,7 @@ public class ChatWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
-        System.out.println("WebSocket server ON ws://localhost:" + getPort() + "/");
+        System.out.println("WebSocket server ON ws://10.159.125.105:" + getPort() + "/");
         setConnectionLostTimeout(30);
     }
 

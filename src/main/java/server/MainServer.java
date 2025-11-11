@@ -17,7 +17,7 @@ public class MainServer {
         new Thread(() -> {
             ChatWebSocketServer wsServer = new ChatWebSocketServer(portWS, new UserDAO());
             wsServer.start();
-            System.out.println("WebSocket activo en ws://localhost:" + portWS);
+            System.out.println("WebSocket activo en ws://10.159.125.105:" + portWS);
         }).start();
 
         // Servidor TCP tradicional
