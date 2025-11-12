@@ -788,6 +788,7 @@ Agradecimientos especiales a:
 - Java-WebSocket contributors
 - Google STUN servers
 - VS Code y extensiones utilizadas
+- Wei papu pepe
 
 ---
 
