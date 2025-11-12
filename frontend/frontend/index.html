@@ -27,6 +27,40 @@
     </div>
     <button id="btnLogin">Iniciar Sesión</button>
     <p id="loginMsg" class="muted"></p>
+    <div class="register-link">
+      <span>¿No tienes cuenta? </span>
+      <a href="#" id="showRegister">Regístrate aquí</a>
+    </div>
+  </section>
+
+  <!-- Sección de registro -->
+  <section class="card hidden" id="register">
+    <h2>Crear Cuenta</h2>
+    <div class="subtitle">Únete a NextTalk</div>
+    <div class="row">
+      <div>
+        <label class="field-label" for="regUsername">Usuario</label>
+        <input id="regUsername" autocomplete="username" placeholder="Elige un nombre de usuario" />
+      </div>
+      <div>
+        <label class="field-label" for="regFullName">Nombre Completo</label>
+        <input id="regFullName" autocomplete="name" placeholder="Tu nombre completo" />
+      </div>
+      <div>
+        <label class="field-label" for="regPassword">Contraseña</label>
+        <input id="regPassword" type="password" autocomplete="new-password" placeholder="Crea una contraseña" />
+      </div>
+      <div>
+        <label class="field-label" for="regPasswordConfirm">Confirmar Contraseña</label>
+        <input id="regPasswordConfirm" type="password" autocomplete="new-password" placeholder="Confirma tu contraseña" />
+      </div>
+    </div>
+    <button id="btnRegister">Crear Cuenta</button>
+    <p id="registerMsg" class="muted"></p>
+    <div class="register-link">
+      <span>¿Ya tienes cuenta? </span>
+      <a href="#" id="showLogin">Inicia sesión</a>
+    </div>
   </section>
 
   <!-- Sección principal del chat -->
@@ -95,7 +129,10 @@
           <h3>Videollamada Grupal</h3>
           <span id="participantCount" class="participant-count">0 participantes</span>
         </div>
-        <button id="btnLeaveCall" class="leave-call-btn">Salir de la llamada</button>
+        <div class="call-header-buttons">
+          <button id="btnMaximizeCall" class="maximize-btn" title="Maximizar">⛶</button>
+          <button id="btnLeaveCall" class="leave-call-btn">Salir</button>
+        </div>
       </div>
       
       <div class="video-call-container">
@@ -141,6 +178,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

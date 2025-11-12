@@ -1,10 +1,16 @@
 package server;
 
-import server.model.*;
-import server.dao.UserDAO;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.io.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import server.dao.UserDAO;
+import server.model.Message;
+import server.model.TextMessage;
+import server.model.User;
 
 public class ClientHandler implements Runnable {
     private Socket socket;
@@ -33,21 +39,49 @@ public class ClientHandler implements Runnable {
     }
 
     private boolean handleLogin() throws IOException, ClassNotFoundException {
-        // Espera recibir un login (puede ser Map o String[]; aquí asumimos arreglo {username, password})
+        // Espera recibir un login o registro
+        // Formato: String[] {command, username, password, [fullName]}
+        // command: "LOGIN" o "REGISTER"
         Object o = in.readObject();
         if(o instanceof String[]){
             String[] data = (String[]) o;
-            String username = data[0];
-            String password = data[1];
+            if(data.length < 3) {
+                sendMessage(new TextMessage("SERVER", "LOGIN_BADFORMAT"));
+                return false;
+            }
+            
+            String command = data[0];
+            String username = data[1];
+            String password = data[2];
             UserDAO dao = new UserDAO();
-            User u = dao.authenticate(username, password);
-            if(u != null){
-                this.user = u;
-                server.registerClient(this);
-                sendMessage(new TextMessage("SERVER", "LOGIN_SUCCESS"));
-                return true;
+            
+            if("REGISTER".equals(command)) {
+                // Registro de nuevo usuario
+                String fullName = data.length > 3 ? data[3] : username;
+                User u = dao.registerUser(username, fullName, password);
+                if(u != null){
+                    this.user = u;
+                    server.registerClient(this);
+                    sendMessage(new TextMessage("SERVER", "REGISTER_SUCCESS"));
+                    return true;
+                } else {
+                    sendMessage(new TextMessage("SERVER", "REGISTER_FAIL"));
+                    return false;
+                }
+            } else if("LOGIN".equals(command)) {
+                // Login tradicional
+                User u = dao.authenticate(username, password);
+                if(u != null){
+                    this.user = u;
+                    server.registerClient(this);
+                    sendMessage(new TextMessage("SERVER", "LOGIN_SUCCESS"));
+                    return true;
+                } else {
+                    sendMessage(new TextMessage("SERVER", "LOGIN_FAIL"));
+                    return false;
+                }
             } else {
-                sendMessage(new TextMessage("SERVER", "LOGIN_FAIL"));
+                sendMessage(new TextMessage("SERVER", "LOGIN_BADFORMAT"));
                 return false;
             }
         } else {

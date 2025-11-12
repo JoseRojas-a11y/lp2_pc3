@@ -132,6 +132,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow-x: hidden;
 }
 .hidden { display: none; }
 .card { 
@@ -259,6 +260,25 @@ button.ghost {
 .muted { 
     color: #666; 
     font-size: 0.9rem; 
+}
+
+.register-link {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.register-link a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s;
+}
+
+.register-link a:hover {
+    color: #3838c7;
+    text-decoration: underline;
 }
 
 .bar {
@@ -574,25 +594,92 @@ a.file { text-decoration: none; color: inherit; }
     50% { box-shadow: 0 0 0 10px rgba(97, 95, 255, 0); }
 }
 
-/* Modal de videollamada */
+/* Modal base - No bloquea interacción */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 9999;
+    box-sizing: border-box;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+/* Modal de videollamada - Ventana flotante */
 .video-call-modal {
-    width: 95vw;
-    height: 90vh;
-    max-width: 1400px;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 500px;
+    height: 400px;
     display: flex;
     flex-direction: column;
     background: #1a1a1a;
-    border-radius: 16px;
-    overflow: hidden;
+    border-radius: 12px;
+    overflow: auto;
+    box-sizing: border-box;
+    pointer-events: auto;
+    resize: both;
+    min-width: 320px;
+    min-height: 240px;
+    max-width: 90vw;
+    max-height: 80vh;
+    box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    transition: all 0.3s ease;
+}
+
+.video-call-modal::-webkit-resizer {
+    background: linear-gradient(135deg, transparent 50%, #615FFF 50%);
+    border-radius: 0 0 12px 0;
+}
+
+.video-call-modal.maximized {
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    width: calc(100vw - 40px) !important;
+    height: calc(100vh - 40px) !important;
+    resize: none;
 }
 
 .video-call-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 16px 24px;
+    padding: 12px 16px;
     background: #2a2a2a;
     border-bottom: 1px solid #444;
+    cursor: move;
+    user-select: none;
+}
+
+.call-header-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.maximize-btn {
+    background: #444;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.85rem;
+}
+
+.maximize-btn:hover {
+    background: #555;
 }
 
 .call-info {
@@ -634,18 +721,29 @@ a.file { text-decoration: none; color: inherit; }
     flex: 1;
     display: flex;
     overflow: hidden;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* Grid de videos */
 .video-grid {
     flex: 1;
     display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px;
+    background: #1a1a1a;
+    overflow-y: auto;
+    overflow-x: hidden;
+    align-content: start;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.video-call-modal.maximized .video-grid {
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 12px;
     padding: 16px;
-    background: #1a1a1a;
-    overflow-y: auto;
-    align-content: start;
 }
 
 /* Para 1 participante */
@@ -720,11 +818,18 @@ a.file { text-decoration: none; color: inherit; }
 
 /* Sidebar de participantes */
 .call-sidebar {
-    width: 280px;
+    width: 200px;
+    min-width: 150px;
     background: #2a2a2a;
     border-left: 1px solid #444;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.video-call-modal.maximized .call-sidebar {
+    width: 280px;
 }
 
 .call-sidebar-header {
@@ -843,6 +948,18 @@ a.file { text-decoration: none; color: inherit; }
 
 /* Responsive */
 @media (max-width: 768px) {
+    .video-call-modal {
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        border-radius: 0;
+        resize: none;
+        transform: none !important;
+    }
+
     .video-call-container {
         flex-direction: column;
     }

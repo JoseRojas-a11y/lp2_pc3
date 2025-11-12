@@ -124,6 +124,28 @@ public class ChatWebSocketServer extends WebSocketServer {
                 break;
             }
 
+            case "register": {
+                String username = safeStr(map.get("username"));
+                String fullName = safeStr(map.get("fullName"));
+                String password = safeStr(map.get("password"));
+                
+                if (username.isEmpty() || password.isEmpty()) {
+                    conn.send(json("type","register_fail","msg","empty credentials"));
+                    return;
+                }
+                
+                User u = userDAO.registerUser(username, fullName, password);
+                if (u != null) {
+                    sessions.put(conn, u);
+                    conn.send(json("type","register_ok","username", u.getUsername()));
+                    broadcastJson(json("type","userlist","users", currentUsers()));
+                    System.out.println("✅ Nuevo usuario registrado: " + u.getUsername());
+                } else {
+                    conn.send(json("type","register_fail","msg","username already exists"));
+                }
+                break;
+            }
+
             case "text": {
                 User u = sessions.get(conn);
                 if (u == null) { conn.close(1008,"Not authed"); return; }
