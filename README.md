@@ -8,7 +8,7 @@
 
 ## 📋 Descripción del Proyecto
 
-**NextTalk** es una aplicación de mensajería en tiempo real desarrollada como proyecto académico para el curso de Lenguaje de Programación 2. Permite comunicación instantánea mediante texto, transferencia de archivos y videollamadas grupales usando WebRTC.
+**NextTalk** es una aplicación de mensajería en tiempo real desarrollada como proyecto académico para el curso de Lenguaje de Programación 2. Permite comunicación instantánea mediante texto, transferencia de archivos y videollamadas grupales usando WebRTC, con arquitectura modular (JS y CSS), configuración centralizada y logging a archivos para facilitar despliegue y mantenimiento.
 
 ### Características Principales
 
@@ -17,8 +17,10 @@
 - 💬 **Chat en tiempo real** mediante WebSocket
 - 📎 **Transferencia de archivos** con soporte para múltiples formatos
 - 📹 **Videollamadas grupales** usando WebRTC (mesh topology)
-- 🎨 **Interfaz moderna** responsive con diseño flotante para videollamadas
-- 🏗️ **Arquitectura modular** implementando patrones de diseño profesionales
+- 🎨 **Interfaz moderna** responsive con ventana flotante de videollamada
+- 🏗️ **Arquitectura modular** (JS y CSS) implementando patrones de diseño profesionales
+- ⚙️ **Configuración centralizada** de host/puertos (Java y JS)
+- 🪵 **Logging** a archivos .txt con rotación por sesión
 
 ---
 
@@ -36,36 +38,28 @@
 #### Frontend
 - **JavaScript ES6 (Vanilla)** - Sin frameworks externos
 - **HTML5** - Estructura semántica
-- **CSS3** - Estilos modernos con flexbox/grid
+- **CSS3** - Estilos modernos con flexbox/grid y CSS modular
 - **WebSocket API** - Cliente nativo del navegador
 - **WebRTC API** - Comunicación peer-to-peer para video
 
 #### Base de Datos
 - **MySQL 8.0** - Almacenamiento de usuarios y datos persistentes
 
-### Patrones de Diseño Implementados
+### Patrones de Diseño Implementados y Mapeo
 
-El proyecto implementa los siguientes patrones de diseño:
-
-1. **Singleton Pattern** 
-   - `UIManager`, `WebSocketManager`, `FileManager`, `VideoCallManager`
-   - Garantiza una única instancia global de cada gestor
-
-2. **Observer Pattern**
-   - `WebSocketManager` con sistema de observadores para eventos
-   - Notificación automática a componentes suscritos
-
-3. **Strategy Pattern**
-   - `MessageHandler` con estrategias para diferentes tipos de mensajes
-   - Fácil extensión para nuevos tipos de mensajes
-
-4. **Facade Pattern**
-   - `ChatApplication` como orquestador principal
-   - Simplifica la interacción entre componentes
-
-5. **DAO Pattern**
-   - `UserDAO`, `DBConnection`
-   - Abstracción de acceso a datos
+- Singleton
+  - `UIManager`, `WebSocketManager`, `FileManager`, `VideoCallManager`
+  - Única instancia por gestor para estado consistente
+- Observer
+  - `WebSocketManager` emite eventos: `open`, `message`, `close`, `error`; módulos se suscriben
+- Strategy
+  - `MessageHandler` despacha por `message.type` (`auth_ok`, `text`, `file`, `webrtc_*`, `register_*`, etc.)
+- Facade
+  - `ChatApplication` orquesta managers y listeners UI/WS
+- DAO
+  - `UserDAO` y `DBConnection` aíslan acceso a datos (MySQL)
+- Utilidades/Abstracciones
+  - `server.Config` (Java) y `frontend/js/config.js` (JS) centralizan configuración
 
 ---
 
@@ -74,52 +68,50 @@ El proyecto implementa los siguientes patrones de diseño:
 ```
 PC3/
 ├── src/
-│   ├── main/
-│   │   └── java/
-│   │       ├── client/           # Cliente TCP (legacy)
-│   │       │   ├── command/      # Pattern Command para comandos
-│   │       │   ├── core/         # Lógica principal del cliente
-│   │       │   ├── service/      # Servicios del cliente
-│   │       │   └── util/         # Utilidades
-│   │       └── server/
-│   │           ├── dao/          # Data Access Objects
-│   │           │   ├── DBConnection.java
-│   │           │   └── UserDAO.java
-│   │           ├── model/        # Modelos de dominio
-│   │           │   ├── User.java
-│   │           │   ├── Message.java
-│   │           │   ├── TextMessage.java
-│   │           │   └── FileMessage.java
-│   │           ├── view/         # Vistas del servidor
-│   │           ├── ChatWebSocketServer.java
-│   │           ├── ClientHandler.java
-│   │           ├── MainServer.java
-│   │           └── ServerController.java
-│   └── test/
-│       └── java/                 # Tests unitarios
-├── frontend/
-│   └── frontend/
-│       ├── js/
-│       │   ├── managers/         # Gestores Singleton
-│       │   │   ├── UIManager.js
-│       │   │   ├── WebSocketManager.js
-│       │   │   ├── FileManager.js
-│       │   │   └── VideoCallManager.js
-│       │   ├── handlers/         # Manejadores de eventos
-│       │   │   └── MessageHandler.js
-│       │   ├── utils/            # Utilidades
-│       │   │   ├── DOMUtils.js
-│       │   │   └── FileUtils.js
-│       │   └── ChatApplication.js  # Facade principal
-│       ├── index.html            # Interfaz principal
-│       ├── styles.css            # Estilos
-│       └── app.js                # Entry point
-├── database/
-│   └── create_tables.sql         # Schema de base de datos
-├── pom.xml                       # Configuración Maven
-├── REGISTRO_USUARIOS.md          # Documentación de registro
-└── README.md                     # Este archivo
+│   ├── main/java/
+│   │   ├── client/
+│   │   └── server/
+│   │       ├── Config.java            # Config central (host/puertos) via env
+│   │       ├── ChatWebSocketServer.java
+│   │       ├── MainServer.java
+│   │       ├── dao/
+│   │       │   ├── DBConnection.java
+│   │       │   └── UserDAO.java
+│   │       ├── model/ (User, Message, TextMessage, FileMessage)
+│   │       ├── util/ChatLogger.java   # Logger a archivos TXT en logs/
+│   │       └── view/ServerViewConsole.java
+│   └── test/java/
+├── frontend/frontend/
+│   ├── js/
+│   │   ├── config.js                  # Config FE: protocolo/host/puerto (WS)
+│   │   ├── ChatApplication.js         # Facade principal
+│   │   ├── handlers/MessageHandler.js
+│   │   ├── managers/
+│   │   │   ├── UIManager.js
+│   │   │   ├── WebSocketManager.js
+│   │   │   ├── FileManager.js
+│   │   │   └── VideoCallManager.js
+│   │   └── utils/(DOMUtils.js, FileUtils.js)
+│   ├── styles/
+│   │   ├── _variables.css
+│   │   ├── _base.css
+│   │   ├── layout/chat-layout.css
+│   │   ├── components/(messages.css, files.css)
+│   │   ├── features/(auth.css, video-call.css)
+│   │   ├── utilities.css
+│   │   ├── responsive.css
+│   │   └── main.css                   # Punto de entrada CSS (imports)
+│   ├── index.html
+│   └── app.js                         # Entry mínimo (módulos ES6)
+├── database/create_tables.sql
+├── logs/                              # Archivos de log (gitignored)
+├── pom.xml
+├── REGISTRO_USUARIOS.md
+└── README.md
 ```
+
+> Notas
+> - Las carpetas `logs/` y `target/` están en `.gitignore` (artefactos de ejecución/build).
 
 ---
 
@@ -184,10 +176,13 @@ cd C:\Users\jose\Desktop\PC3
 # Compilar el proyecto
 mvn clean compile
 
-# Ejecutar el servidor
+# Ejecutar el servidor (valores por defecto: host=localhost, TCP=5340, WS=8081)
 mvn exec:java -Dexec.mainClass="server.MainServer"
-```
 
+# Opcional: configurar host/puertos por variables de entorno (Windows PowerShell)
+# (Usado por server.Config)
+$env:JAVA_HOST='192.168.1.50'; $env:JAVA_TCP_PORT='5555'; $env:JAVA_WS_PORT='9090'; mvn exec:java -Dexec.mainClass="server.MainServer"
+```
 El servidor iniciará en:
 - **WebSocket**: `ws://localhost:8081/`
 - **TCP**: `localhost:5340` (legacy)
@@ -205,6 +200,28 @@ El servidor iniciará en:
 cd frontend/frontend
 python -m http.server 5500
 ```
+
+---
+
+## ⚙️ Configuración Centralizada (Host/Puertos)
+
+### Backend (Java)
+- Clase: `server.Config`
+- Variables de entorno soportadas:
+  - `JAVA_HOST` (por defecto: `localhost`)
+  - `JAVA_TCP_PORT` (por defecto: `5340`)
+  - `JAVA_WS_PORT` (por defecto: `8081`)
+- Uso interno: `MainServer`, `ChatWebSocketServer` y `client/core/ClientMain` consumen estos valores.
+
+### Frontend (JS)
+- Módulo: `frontend/frontend/js/config.js`
+- Calcula `wsUrl` basado en protocolo, host y puerto; admite overrides en tiempo de ejecución con `localStorage`:
+```js
+localStorage.setItem('WS_HOST', '192.168.1.50');
+localStorage.setItem('WS_PORT', '9090');
+location.reload();
+```
+- `WebSocketManager` toma `CONFIG.wsUrl` por defecto.
 
 ---
 
@@ -303,7 +320,8 @@ connect()                          // Conectar al servidor
 authenticate(user, pass)           // Autenticar
 register(user, fullName, pass)     // Registrar usuario
 send(data)                         // Enviar datos
-addObserver(callback)              // Suscribir observador
+on(event, callback)                // Suscribir observador a eventos
+off(event, callback)               // Cancelar suscripción
 ```
 
 #### UIManager.js (Singleton)
@@ -331,7 +349,13 @@ leaveCall()                        // Salir de llamada
 toggleMicrophone()                 // Silenciar/activar mic
 toggleCamera()                     // Activar/desactivar cámara
 shareScreen()                      // Compartir pantalla
+toggleMaximize()                   // Expandir/restaurar ventana
 ```
+
+Características UI actuales:
+- Ventana flotante arrastrable y responsiva.
+- Modo reducido: muestra solo al participante prioritario (último en hablar o primero en unirse, excluyendo “yo” cuando hay remotos), sin lista de participantes, sin scroll interno.
+- Modo maximizado: grilla con todos los participantes.
 
 #### MessageHandler.js (Strategy)
 Procesamiento de mensajes del servidor:
@@ -477,6 +501,22 @@ handleWebRTCOffer(msg)             // Oferta WebRTC
 ```
 
 ---
+## 🧱 CSS Modular (arquitectura de estilos)
+
+Estructura de estilos dividida por propósito para facilitar mantenibilidad y escalabilidad:
+
+- `styles/_variables.css` → variables de tema y tokens.
+- `styles/_base.css` → resets y componentes base (body, card, botones).
+- `styles/layout/` → layout general del chat (sidebar, header, main).
+- `styles/components/` → piezas reutilizables (messages, files, composer).
+- `styles/features/` → vistas funcionales (auth, video-call).
+- `styles/utilities.css` → utilidades (`.muted`, etc.).
+- `styles/responsive.css` → reglas responsivas.
+- `styles/main.css` → punto de entrada con `@import` en orden de cascada seguro.
+
+Beneficios: separación clara por dominios, menor choque de reglas, orden de carga controlado.
+
+---
 
 ## 🎯 Características de WebRTC
 
@@ -609,6 +649,14 @@ WebSocket connection to 'ws://localhost:8081/' failed
 - ⏳ Load balancing multi-servidor
 
 ---
+## 🪵 Logging
+
+- Logger: `server/util/ChatLogger.java`
+- Escribe en `logs/chat-YYYY-MM-DD_HH-mm-ss.txt`
+- Registra: inicio/parada, auth/registro, mensajes de texto, archivos (nombre), eventos de videollamada y errores.
+- `logs/` está en `.gitignore` (igual que `target/`).
+
+---
 
 ## 🧪 Testing
 
@@ -690,7 +738,10 @@ npm test
 ## 👥 Contribuciones
 
 ### Equipo de Desarrollo
-- **José Rojas** - Desarrollo Full Stack
+- **Jose Rojas** 
+- **Isabel Ávila**
+- **Mauricio Chinchayhura**
+- **Frabicio Zúñiga** 
 
 ### Contribuir al Proyecto
 
@@ -792,6 +843,6 @@ Agradecimientos especiales a:
 
 ---
 
-**Última actualización**: 11 de Noviembre, 2025  
-**Versión**: 1.0.0  
+**Última actualización**: 12 de Noviembre, 2025  
+**Versión**: 1.1.0  
 **Estado**: ✅ Estable - Funcional para desarrollo
