@@ -1,0 +1,41 @@
+/* Autenticación: login y registro */
+#login, #register {
+  text-align: center;
+}
+#login h2, #register h2 {
+  color: var(--primary);
+  font-size: 1.25rem;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+#login .subtitle, #register .subtitle {
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 18px;
+}
+.field-label {
+  display: block;
+  font-weight: 400;
+  color: #222;
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+  text-align: left;
+}
+#login .field-label { margin-bottom: 12px; }
+#login .row > div { margin-bottom: 12px; }
+#login .row > div:last-child { margin-bottom: 0; }
+input, #login input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background: #f4f5f7;
+  color: #444;
+  box-shadow: none;
+}
+#login input::placeholder { color: #888; }
+#login button { font-weight: 400; font-size: 0.9rem; }
+.register-link { text-align: center; margin-top: 16px; font-size: 0.9rem; color: #666; }
+.register-link a { color: var(--primary); text-decoration: none; font-weight: 600; transition: color 0.2s; }
+.register-link a:hover { color: #3838c7; text-decoration: underline; }

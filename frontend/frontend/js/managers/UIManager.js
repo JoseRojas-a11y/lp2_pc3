@@ -170,11 +170,14 @@ class UIManager {
   renderFileMessage(url, filename, from, isMine = false, timestamp = Date.now()) {
     const wrapper = document.createElement('div');
     wrapper.className = 'msg-container' + (isMine ? ' mine' : '');
-    
-    // Obtener extensión y emoji
-    const extension = filename.includes('.') ? filename.split('.').pop().toUpperCase() : 'FILE';
+
+    // Normalizar nombre: recortar y colapsar espacios repetidos
+    const cleanName = (filename || '').trim().replace(/\s+/g, ' ');
+
+    // Obtener extensión y emoji a partir del nombre limpio
+    const extension = cleanName.includes('.') ? cleanName.split('.').pop().toUpperCase() : 'FILE';
     const emoji = this.getFileEmoji(extension);
-    
+
     wrapper.innerHTML = `
       <div class="msg-avatar">
         ${DOMUtils.getAvatarSVG()}
@@ -184,16 +187,14 @@ class UIManager {
         <div class="msg-content file-message">
           <div class="file-icon">${emoji}</div>
           <div class="file-info">
-            <a class="file-link" href="${url}" download="${DOMUtils.escapeAttribute(filename)}">
-              ${DOMUtils.escapeHtml(filename)}
-            </a>
+            <a class="file-link" href="${url}" download="${DOMUtils.escapeAttribute(cleanName)}">${DOMUtils.escapeHtml(cleanName)}</a>
             <span class="file-badge">${extension}</span>
           </div>
         </div>
         <div class="msg-time">${DOMUtils.formatTime(timestamp)}</div>
       </div>
     `;
-    
+
     this.messagesContainer.appendChild(wrapper);
     this.scrollToBottom();
   }

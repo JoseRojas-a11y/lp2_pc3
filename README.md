@@ -773,8 +773,8 @@ R: Sí, la interfaz es responsive y WebRTC funciona en navegadores móviles.
 ## 🎓 Créditos Académicos
 
 **Curso**: Lenguaje de Programación 2  
-**Institución**: [Nombre de la Universidad]  
-**Profesor**: [Nombre del Profesor]  
+**Institución**: Universidad Nacional de Ingeniería  
+**Profesor**: YAN EDUARDO CISNEROS NAPRAVNIK
 **Ciclo Académico**: 2025-I  
 **Proyecto**: PC3 - Sistema de Chat en Tiempo Real
 

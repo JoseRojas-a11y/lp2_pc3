@@ -11,6 +11,7 @@ C:\Users\jose\Desktop\PC3\src\main\java\client\service\MessageHandler.java
 C:\Users\jose\Desktop\PC3\src\main\java\client\util\ConsoleReader.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\ChatWebSocketServer.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\ClientHandler.java
+C:\Users\jose\Desktop\PC3\src\main\java\server\Config.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\dao\DBConnection.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\dao\UserDAO.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\MainServer.java
@@ -19,4 +20,5 @@ C:\Users\jose\Desktop\PC3\src\main\java\server\model\Message.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\model\TextMessage.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\model\User.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\ServerController.java
+C:\Users\jose\Desktop\PC3\src\main\java\server\util\ChatLogger.java
 C:\Users\jose\Desktop\PC3\src\main\java\server\view\ServerViewConsole.java

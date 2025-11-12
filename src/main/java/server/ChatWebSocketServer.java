@@ -20,6 +20,7 @@ import com.google.gson.reflect.TypeToken;
 
 import server.dao.UserDAO;
 import server.model.User;
+import server.util.ChatLogger;
 
 /**
  * Servidor WebSocket para conectar con un frontend en JavaScript.
@@ -46,14 +47,16 @@ public class ChatWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
-        System.out.println("WebSocket server ON ws://10.159.125.105:" + getPort() + "/");
+        System.out.println("WebSocket server ON ws://" + Config.getHost() + ":" + getPort() + "/");
         setConnectionLostTimeout(30);
+        ChatLogger.getInstance().logInfo("WebSocket server ON puerto " + getPort());
     }
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         System.out.println("Nueva conexión WS: " + conn.getRemoteSocketAddress());
         // Aún no autenticado: esperamos type=auth
+        ChatLogger.getInstance().logInfo("Nueva conexión WS: " + conn.getRemoteSocketAddress());
     }
 
     @Override
@@ -72,14 +75,19 @@ public class ChatWebSocketServer extends WebSocketServer {
         if (u != null) {
             String username = u.getUsername();
             System.out.println("WS cerrado: " + username + " (code=" + code + ")");
+            ChatLogger.getInstance().logLogout(username);
             
             // Si estaba en videollamada, notificar a los demás
             if (videoRoomUsers.containsKey(username)) {
                 videoRoomUsers.remove(username);
+                ChatLogger.getInstance().logVideoLeave(username);
                 for (WebSocket c : videoRoomUsers.values()) {
                     if (c.isOpen()) {
                         c.send(json("type", "user_left", "username", username));
                     }
+                }
+                if (videoRoomUsers.isEmpty()) {
+                    ChatLogger.getInstance().logVideoEnd();
                 }
             }
             
@@ -89,7 +97,7 @@ public class ChatWebSocketServer extends WebSocketServer {
 
     @Override
     public void onError(WebSocket conn, Exception ex) {
-        ex.printStackTrace();
+        ChatLogger.getInstance().logError("WS error: " + ex.getMessage());
     }
 
     // ==================== Handlers ====================
@@ -117,6 +125,7 @@ public class ChatWebSocketServer extends WebSocketServer {
                     sessions.put(conn, u);
                     conn.send(json("type","auth_ok","username", u.getUsername()));
                     broadcastJson(json("type","userlist","users", currentUsers()));
+                    ChatLogger.getInstance().logLogin(u.getUsername());
                 } else {
                     conn.send(json("type","auth_fail","msg","bad credentials"));
                     conn.close(1008, "Auth failed");
@@ -140,6 +149,8 @@ public class ChatWebSocketServer extends WebSocketServer {
                     conn.send(json("type","register_ok","username", u.getUsername()));
                     broadcastJson(json("type","userlist","users", currentUsers()));
                     System.out.println("✅ Nuevo usuario registrado: " + u.getUsername());
+                    ChatLogger.getInstance().logInfo("Usuario registrado: " + u.getUsername());
+                    ChatLogger.getInstance().logLogin(u.getUsername());
                 } else {
                     conn.send(json("type","register_fail","msg","username already exists"));
                 }
@@ -162,6 +173,7 @@ public class ChatWebSocketServer extends WebSocketServer {
                     "content", content,
                     "timestamp", ts
                 ));
+                ChatLogger.getInstance().logText(u.getUsername(), content);
                 break;
             }
 
@@ -182,6 +194,7 @@ public class ChatWebSocketServer extends WebSocketServer {
                 
                 System.out.println("📎 Archivo recibido de " + u.getUsername() + 
                                    ": " + filename + " (" + mimetype + ", " + size + " bytes)");
+                ChatLogger.getInstance().logFile(u.getUsername(), filename);
                 
                 // Broadcast del archivo a todos EXCEPTO al remitente
                 String payload = json(
@@ -215,7 +228,12 @@ public class ChatWebSocketServer extends WebSocketServer {
                 conn.send(json("type", "room_users", "users", currentRoomUsers));
                 
                 // Agregar usuario a la sala
+                boolean wasEmpty = videoRoomUsers.isEmpty();
                 videoRoomUsers.put(username, conn);
+                if (wasEmpty) {
+                    ChatLogger.getInstance().logVideoStart();
+                }
+                ChatLogger.getInstance().logVideoJoin(username);
                 
                 // Notificar a todos los demás que un nuevo usuario se unió
                 for (Map.Entry<String, WebSocket> entry : videoRoomUsers.entrySet()) {
@@ -234,6 +252,7 @@ public class ChatWebSocketServer extends WebSocketServer {
                 
                 String username = u.getUsername();
                 videoRoomUsers.remove(username);
+                ChatLogger.getInstance().logVideoLeave(username);
                 
                 // Notificar a todos que el usuario salió
                 for (WebSocket c : videoRoomUsers.values()) {
@@ -241,7 +260,9 @@ public class ChatWebSocketServer extends WebSocketServer {
                         c.send(json("type", "user_left", "username", username));
                     }
                 }
-                
+                if (videoRoomUsers.isEmpty()) {
+                    ChatLogger.getInstance().logVideoEnd();
+                }
                 System.out.println("📹 " + username + " salió de la videollamada. Total: " + videoRoomUsers.size());
                 break;
             }
@@ -301,6 +322,10 @@ public class ChatWebSocketServer extends WebSocketServer {
             }
 
             case "logout": {
+                User u = sessions.get(conn);
+                if (u != null) {
+                    ChatLogger.getInstance().logLogout(u.getUsername());
+                }
                 conn.close(1000, "bye");
                 break;
             }

@@ -1,0 +1,139 @@
+/* Área de mensajes */
+#messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: #fff;
+}
+
+/* Contenedor del mensaje con avatar y burbuja */
+.msg-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.msg-container.mine { flex-direction: row-reverse; }
+
+.msg-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 50px;
+}
+
+.msg-avatar svg { width: 40px; height: 40px; }
+
+.msg-username {
+  font-size: 0.72rem;
+  color: #666;
+  font-weight: 500;
+  text-align: center;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 65%;
+  margin-top: -14px;
+}
+
+.msg-bubble .msg-content {
+  background: #fff;
+  border-radius: 20px 20px 20px 4px;
+  padding: 12px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid rgba(0,0,0,0.04);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #222;
+}
+
+.msg-bubble.me .msg-content {
+  background: #615FFF;
+  color: #fff;
+  border-radius: 20px 20px 4px 20px;
+  box-shadow: 0 2px 8px rgba(97,95,255,0.35);
+}
+
+.msg-time { font-size: 0.7rem; color: #999; padding: 0 4px; }
+.msg-container.mine .msg-time { text-align: right; }
+
+/* Compositor (barra de envío) */
+.composer {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  align-items: center;
+  background: rgba(255,255,255,0.9);
+  border-top: 1px solid rgba(0,0,0,0.04);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+#txt {
+  width: 100%;
+  padding: 12px 44px 12px 16px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+label.file {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(calc(-50% - 2px));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  background: transparent;
+  color: #222;
+  font-size: 24px;
+  font-weight: 500;
+  transition: opacity 0.2s ease;
+  line-height: 1;
+  border: none;
+}
+
+label.file:hover { opacity: 0.7; }
+label.file input { display: none; }
+
+#send {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #615FFF;
+  color: white;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  cursor: pointer;
+  transition: filter 0.2s, transform 0.15s;
+  font-size: 18px;
+  transform: rotate(-45deg) translateX(-2px) translateY(-7px);
+  line-height: 1;
+}
+
+#send:hover { filter: brightness(0.97); }
+a.file { text-decoration: none; color: inherit; }

@@ -11,6 +11,7 @@ import server.dao.UserDAO;
 import server.model.Message;
 import server.model.TextMessage;
 import server.model.User;
+import server.util.ChatLogger;
 
 public class ClientHandler implements Runnable {
     private Socket socket;
@@ -63,6 +64,7 @@ public class ClientHandler implements Runnable {
                     this.user = u;
                     server.registerClient(this);
                     sendMessage(new TextMessage("SERVER", "REGISTER_SUCCESS"));
+                    ChatLogger.getInstance().logLogin(u.getUsername());
                     return true;
                 } else {
                     sendMessage(new TextMessage("SERVER", "REGISTER_FAIL"));
@@ -75,6 +77,7 @@ public class ClientHandler implements Runnable {
                     this.user = u;
                     server.registerClient(this);
                     sendMessage(new TextMessage("SERVER", "LOGIN_SUCCESS"));
+                    ChatLogger.getInstance().logLogin(u.getUsername());
                     return true;
                 } else {
                     sendMessage(new TextMessage("SERVER", "LOGIN_FAIL"));
@@ -118,6 +121,9 @@ public class ClientHandler implements Runnable {
                         TextMessage tm = (TextMessage) msg;
                         if("/logout".equalsIgnoreCase(tm.getText().trim())){
                             sendMessage(new TextMessage("SERVER","BYE"));
+                            if (getUsername() != null) {
+                                ChatLogger.getInstance().logLogout(getUsername());
+                            }
                             shutdown();
                             break;
                         }
@@ -143,6 +149,9 @@ public class ClientHandler implements Runnable {
         try { if(in!=null) in.close(); } catch(Exception e){}
         try { if(socket!=null && !socket.isClosed()) socket.close(); } catch(Exception e){}
         System.out.println("Handler for " + getUsername() + " cerrado.");
+        if (getUsername() != null) {
+            ChatLogger.getInstance().logLogout(getUsername());
+        }
     }
 }
 

@@ -3,6 +3,8 @@
  * Patrón Singleton para mantener una única conexión
  * Patrón Observer para notificar eventos
  */
+import { CONFIG } from '../config.js';
+
 class WebSocketManager {
   static instance = null;
 
@@ -11,8 +13,8 @@ class WebSocketManager {
       return WebSocketManager.instance;
     }
 
-    this.ws = null;
-    this.serverUrl = 'ws://localhost:8081/';
+  this.ws = null;
+  this.serverUrl = CONFIG.wsUrl;
     this.listeners = new Map(); // Patrón Observer
     this.isConnected = false;
 

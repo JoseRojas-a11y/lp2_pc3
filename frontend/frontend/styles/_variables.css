@@ -1,0 +1,10 @@
+:root {
+  --primary: #4b4be6;
+  --bg: #ADB1EF;
+  --radius: 12px;
+  --gap: 16px;
+  --sidebar-width: 220px;
+  --danger: #ff4757;
+  --success: #2ecc71;
+  --font-stack: 'Poppins', system-ui, -apple-system, sans-serif;
+}

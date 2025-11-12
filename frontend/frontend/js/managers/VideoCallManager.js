@@ -19,8 +19,12 @@ class VideoCallManager {
     // Estado de la llamada
     this.inCall = false;
     this.localStream = null;
-    this.peerConnections = {}; // {username: RTCPeerConnection}
-    this.participants = new Set();
+  this.peerConnections = {}; // {username: RTCPeerConnection}
+  this.participants = new Set();
+  this.joinOrder = []; // orden de llegada de remotos
+  this.speakingInfo = new Map(); // username -> { analyser, source, intervalId, speaking }
+  this.lastSpeaker = null;
+  this.audioContext = null;
     
     // Configuración RTC
     this.rtcConfig = {
@@ -122,6 +126,7 @@ class VideoCallManager {
   toggleMaximize() {
     const modal = this.videoCallModal;
     const btn = DOMUtils.$('#btnMaximizeCall');
+    const leaveBtn = DOMUtils.$('#btnLeaveCall');
     
     if (!modal) return;
 
@@ -134,11 +139,17 @@ class VideoCallManager {
       modal.style.top = 'auto';
       if (btn) btn.textContent = '⛶';
       if (btn) btn.title = 'Maximizar';
+      if (leaveBtn) leaveBtn.style.marginLeft = '8px';
+      // En modo reducido, mostrar solo usuario prioritario
+      this.updatePriorityView();
     } else {
       modal.classList.add('maximized');
       modal.style.transform = '';
       if (btn) btn.textContent = '◱';
       if (btn) btn.title = 'Restaurar';
+      if (leaveBtn) leaveBtn.style.marginLeft = '0';
+      // En modo maximizado, mostrar todos
+      this.showAllParticipants();
     }
   }
 
@@ -169,12 +180,20 @@ class VideoCallManager {
         }
       });
 
+      // Asegurar audio activado
+      this.localStream.getAudioTracks().forEach(t => { t.enabled = true; });
+
       this.inCall = true;
       this.modal.classList.remove('hidden');
       this.joinButton.classList.add('in-call');
 
       // Agregar video local
       this.addLocalVideo(currentUser);
+
+      // Reanudar AudioContext si está suspendido (política de autoplay)
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        try { await this.audioContext.resume(); } catch {}
+      }
 
       // Notificar al servidor
       this.wsManager.send({ type: 'join_room' });
@@ -208,6 +227,9 @@ class VideoCallManager {
     this.joinButton.classList.remove('in-call');
 
     this.participants.clear();
+  this.joinOrder = [];
+  this.lastSpeaker = null;
+  this.teardownAudioMonitors();
     this.inCall = false;
 
     // Notificar al servidor
@@ -290,6 +312,12 @@ class VideoCallManager {
     
     this.removeParticipantFromList(username);
     this.updateParticipantCount();
+    this.joinOrder = this.joinOrder.filter(u => u !== username);
+    if (this.lastSpeaker === username) {
+      this.lastSpeaker = null;
+    }
+    this.stopAudioMonitor(username);
+    this.updatePriorityView();
   }
 
   /**
@@ -432,9 +460,10 @@ class VideoCallManager {
       videoContainer.className = 'video-participant';
       videoContainer.id = `video-${username}`;
       
-      const video = document.createElement('video');
-      video.autoplay = true;
-      video.playsinline = true;
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsinline = true;
+  video.muted = false;
       
       const info = document.createElement('div');
       info.className = 'participant-info';
@@ -446,10 +475,149 @@ class VideoCallManager {
       
       this.addParticipantToList(username, false);
       this.updateParticipantCount();
+      if (!this.joinOrder.includes(username)) {
+        this.joinOrder.push(username);
+      }
+      this.monitorSpeaking(username, stream);
+      this.updatePriorityView();
     }
     
     const video = videoContainer.querySelector('video');
     video.srcObject = stream;
+    // Intentar iniciar reproducción (evitar bloqueo por autoplay)
+    const tryPlay = () => video.play().catch(() => {});
+    if (video.readyState >= 2) {
+      tryPlay();
+    } else {
+      video.addEventListener('canplay', tryPlay, { once: true });
+    }
+  }
+
+  /**
+   * Monitorea si un participante está hablando mediante nivel de audio
+   */
+  monitorSpeaking(username, stream) {
+    try {
+      if (!this.audioContext) {
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      // Evitar duplicados
+      if (this.speakingInfo.has(username)) return;
+
+      const source = this.audioContext.createMediaStreamSource(stream);
+      const analyser = this.audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      const dataArray = new Uint8Array(analyser.fftSize);
+
+      const container = document.getElementById(`video-${username}`);
+      const threshold = 6; // umbral simple de nivel
+      const holdMs = 800; // mantener speaking unos ms
+      let speaking = false;
+      let lastPeak = 0;
+
+      const check = () => {
+        analyser.getByteTimeDomainData(dataArray);
+        // Calcular desviación media respecto a 128 (silencio)
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i += 16) {
+          sum += Math.abs(dataArray[i] - 128);
+        }
+        const avg = sum / (dataArray.length / 16);
+
+        const now = performance.now();
+        if (avg > threshold) {
+          lastPeak = now;
+          if (!speaking) {
+            speaking = true;
+            container && container.classList.add('speaking');
+            if (username !== this.getCurrentUser()) {
+              this.lastSpeaker = username;
+              if (!this.videoCallModal.classList.contains('maximized')) {
+                this.updatePriorityView();
+              }
+            }
+          }
+        }
+        // Salida de speaking si pasó el hold
+        if (speaking && now - lastPeak > holdMs) {
+          speaking = false;
+          container && container.classList.remove('speaking');
+        }
+      };
+
+      const intervalId = window.setInterval(check, 200);
+      this.speakingInfo.set(username, { analyser, source, intervalId });
+    } catch (e) {
+      console.warn('No se pudo monitorear audio para', username, e);
+    }
+  }
+
+  stopAudioMonitor(username) {
+    const info = this.speakingInfo.get(username);
+    if (!info) return;
+    if (info.intervalId) window.clearInterval(info.intervalId);
+    try {
+      if (info.source) info.source.disconnect();
+      if (info.analyser) info.analyser.disconnect();
+    } catch (e) {
+      // noop
+    }
+    this.speakingInfo.delete(username);
+  }
+
+  teardownAudioMonitors() {
+    for (const username of Array.from(this.speakingInfo.keys())) {
+      this.stopAudioMonitor(username);
+    }
+    if (this.audioContext) {
+      try { this.audioContext.close(); } catch {}
+      this.audioContext = null;
+    }
+  }
+
+  /**
+   * Obtiene usuario prioritario: último en hablar o primero en unirse (excluyendo al local)
+   */
+  getPriorityUser() {
+    const me = this.getCurrentUser();
+    if (this.lastSpeaker && this.lastSpeaker !== me) return this.lastSpeaker;
+    const candidate = this.joinOrder.find(u => u !== me);
+    return candidate || null;
+  }
+
+  /**
+   * Muestra solo el usuario prioritario en modo reducido
+   */
+  updatePriorityView() {
+    if (!this.videoCallModal || this.videoCallModal.classList.contains('maximized')) {
+      this.showAllParticipants();
+      return;
+    }
+    const priority = this.getPriorityUser();
+    const hasRemote = this.joinOrder.length > 0;
+    const nodes = this.videoGrid.querySelectorAll('.video-participant');
+    // Elegir target final
+    let targetId;
+    if (!hasRemote) {
+      targetId = 'video-local';
+    } else if (priority) {
+      targetId = `video-${priority}`;
+    } else {
+      const first = this.joinOrder.find(u => u !== this.getCurrentUser());
+      targetId = first ? `video-${first}` : 'video-local';
+    }
+    nodes.forEach(node => {
+      node.style.display = (node.id === targetId) ? '' : 'none';
+    });
+  }
+
+  /**
+   * Muestra todos los participantes (modo maximizado)
+   */
+  showAllParticipants() {
+    const nodes = this.videoGrid.querySelectorAll('.video-participant');
+    nodes.forEach(node => { node.style.display = ''; });
   }
 
   /**

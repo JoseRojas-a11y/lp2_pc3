@@ -1,0 +1,17 @@
+/* Reglas responsive */
+@media (max-width: 768px) {
+  .video-call-modal {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0;
+    resize: none;
+    transform: none !important;
+  }
+  .video-call-container { flex-direction: column; }
+  .call-sidebar { width: 100%; max-height: 200px; border-left: none; border-top: 1px solid #444; }
+  .video-grid { grid-template-columns: 1fr !important; }
+}

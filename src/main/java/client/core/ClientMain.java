@@ -4,8 +4,8 @@ import java.util.Scanner;
 
 public class ClientMain {
     public static void main(String[] args) throws Exception {
-        String host = "10.73.5.105";
-        int port = 5340;
+    String host = server.Config.getHost();
+    int port = server.Config.getTcpPort();
 
         Scanner sc = new Scanner(System.in);
         System.out.print("Usuario: ");
