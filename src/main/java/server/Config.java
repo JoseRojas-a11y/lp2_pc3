@@ -7,16 +7,13 @@ package server;
  */
 public final class Config {
     private static final String DEFAULT_HOST = "localhost"; // Cambiar aquí si se desea un valor por defecto distinto
-    private static final int DEFAULT_TCP_PORT = 5340;
     private static final int DEFAULT_WS_PORT  = 8081;
 
     private static final String HOST_VALUE;
-    private static final int TCP_PORT_VALUE;
     private static final int WS_PORT_VALUE;
 
     static {
     HOST_VALUE = getenvOrDefault("JAVA_HOST", DEFAULT_HOST);
-    TCP_PORT_VALUE = parsePort(getenvOrDefault("JAVA_TCP_PORT", String.valueOf(DEFAULT_TCP_PORT)), DEFAULT_TCP_PORT);
     WS_PORT_VALUE  = parsePort(getenvOrDefault("JAVA_WS_PORT", String.valueOf(DEFAULT_WS_PORT)), DEFAULT_WS_PORT);
     }
 
@@ -38,7 +35,6 @@ public final class Config {
     }
 
     public static String getHost() { return HOST_VALUE; }
-    public static int getTcpPort() { return TCP_PORT_VALUE; }
     public static int getWsPort()  { return WS_PORT_VALUE; }
 
     /** Devuelve la URL base para WebSocket (sin path final). */

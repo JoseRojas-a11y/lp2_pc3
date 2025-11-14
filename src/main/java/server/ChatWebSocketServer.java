@@ -2,11 +2,6 @@ package server;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -22,7 +17,19 @@ import com.google.gson.reflect.TypeToken;
 import server.dao.ActionDAO;
 import server.dao.UserDAO;
 import server.model.User;
-import server.util.ChatLogger;
+import server.service.AuditService;
+import server.service.MessageContext;
+import server.service.MessageDispatcher;
+import server.service.handlers.AuthHandler;
+import server.service.handlers.FileHandler;
+import server.service.handlers.JoinRoomHandler;
+import server.service.handlers.LeaveRoomHandler;
+import server.service.handlers.LogoutHandler;
+import server.service.handlers.RegisterHandler;
+import server.service.handlers.TextHandler;
+import server.service.handlers.WebRTCAnswerHandler;
+import server.service.handlers.WebRTCIceHandler;
+import server.service.handlers.WebRTCOfferHandler;
 
 /**
  * Servidor WebSocket para conectar con un frontend en JavaScript.
@@ -42,6 +49,9 @@ public class ChatWebSocketServer extends WebSocketServer {
     private final Gson gson = new Gson();
     private final UserDAO userDAO = new UserDAO();
     private final ActionDAO actionDAO = new ActionDAO();
+    private final AuditService auditService = new AuditService();
+    private MessageDispatcher dispatcher;
+    private MessageContext messageContext;
 
     public ChatWebSocketServer(int port) {
         super(new InetSocketAddress(port));
@@ -51,14 +61,27 @@ public class ChatWebSocketServer extends WebSocketServer {
     public void onStart() {
         System.out.println("WebSocket server ON ws://" + Config.getHost() + ":" + getPort() + "/");
         setConnectionLostTimeout(30);
-        ChatLogger.getInstance().logInfo("WebSocket server ON puerto " + getPort());
+        auditService.recordSystem("WebSocket server ON puerto " + getPort());
+        // Inicializar contexto y dispatcher (Open/Closed: agregar handler sin tocar servidor)
+        this.messageContext = new MessageContext(sessions, videoRoomUsers, userDAO, actionDAO, auditService, gson);
+        this.dispatcher = new MessageDispatcher()
+            .register(new AuthHandler())
+            .register(new RegisterHandler())
+            .register(new TextHandler())
+            .register(new FileHandler())
+            .register(new JoinRoomHandler())
+            .register(new LeaveRoomHandler())
+            .register(new WebRTCOfferHandler())
+            .register(new WebRTCAnswerHandler())
+            .register(new WebRTCIceHandler())
+            .register(new LogoutHandler());
     }
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         System.out.println("Nueva conexión WS: " + conn.getRemoteSocketAddress());
         // Aún no autenticado: esperamos type=auth
-        ChatLogger.getInstance().logInfo("Nueva conexión WS: " + conn.getRemoteSocketAddress());
+        auditService.recordSystem("Nueva conexión WS: " + conn.getRemoteSocketAddress());
     }
 
     @Override
@@ -76,310 +99,43 @@ public class ChatWebSocketServer extends WebSocketServer {
         User u = sessions.remove(conn);
         if (u != null) {
             String username = u.getUsername();
-            System.out.println("WS cerrado: " + username + " (code=" + code + ")");
-            ChatLogger.getInstance().logLogout(username);
-            
-            // Si estaba en videollamada, notificar a los demás
+            auditService.recordLogout(username);
             if (videoRoomUsers.containsKey(username)) {
                 videoRoomUsers.remove(username);
-                ChatLogger.getInstance().logVideoLeave(username);
+                auditService.recordVideoLeave(username);
                 for (WebSocket c : videoRoomUsers.values()) {
-                    if (c.isOpen()) {
-                        c.send(json("type", "user_left", "username", username));
-                    }
+                    if (c.isOpen()) c.send(messageContext.json("type","user_left","username",username));
                 }
-                if (videoRoomUsers.isEmpty()) {
-                    ChatLogger.getInstance().logVideoEnd();
-                }
+                if (videoRoomUsers.isEmpty()) auditService.recordSystem("Videollamada finalizada");
             }
-            
-            broadcastJson(json("type","userlist","users", currentUsers()));
+            // Broadcast nueva lista de usuarios
+            messageContext.broadcast(messageContext.json("type","userlist","users", messageContext.currentUsers()));
         }
     }
 
     @Override
     public void onError(WebSocket conn, Exception ex) {
-        ChatLogger.getInstance().logError("WS error: " + ex.getMessage());
+        auditService.recordSystem("ERROR - WS error: " + ex.getMessage());
     }
 
-    // ==================== Handlers ====================
-
-    private void handleText(WebSocket conn, String json) {
-        Map<String,Object> map = gson.fromJson(json,
-                new TypeToken<Map<String,Object>>(){}.getType());
+    private void handleText(WebSocket conn, String rawJson) {
+        Map<String,Object> map = gson.fromJson(rawJson,new TypeToken<Map<String,Object>>(){}.getType());
         String type = (String) map.get("type");
         if (type == null) {
-            conn.send(json("type","error","msg","missing type"));
+            conn.send(messageContext.json("type","error","msg","missing type"));
             return;
         }
-
-        switch (type) {
-            case "auth": {
-                String username = safeStr(map.get("username"));
-                String password = safeStr(map.get("password"));
-                if (username.isEmpty() || password.isEmpty()) {
-                    conn.send(json("type","auth_fail","msg","empty credentials"));
-                    conn.close(1008, "Auth failed");
-                    return;
-                }
-                User u = userDAO.authenticate(username, password); // usa tu DAO actual
-                if (u != null) {
-                    sessions.put(conn, u);
-                    conn.send(json("type","auth_ok","username", u.getUsername()));
-                    broadcastJson(json("type","userlist","users", currentUsers()));
-                    ChatLogger.getInstance().logLogin(u.getUsername());
-                } else {
-                    conn.send(json("type","auth_fail","msg","bad credentials"));
-                    conn.close(1008, "Auth failed");
-                }
-                break;
-            }
-
-            case "register": {
-                String username = safeStr(map.get("username"));
-                String fullName = safeStr(map.get("fullName"));
-                String password = safeStr(map.get("password"));
-                
-                if (username.isEmpty() || password.isEmpty()) {
-                    conn.send(json("type","register_fail","msg","empty credentials"));
-                    return;
-                }
-                
-                User u = userDAO.registerUser(username, fullName, password);
-                if (u != null) {
-                    sessions.put(conn, u);
-                    conn.send(json("type","register_ok","username", u.getUsername()));
-                    broadcastJson(json("type","userlist","users", currentUsers()));
-                    System.out.println("✅ Nuevo usuario registrado: " + u.getUsername());
-                    ChatLogger.getInstance().logInfo("Usuario registrado: " + u.getUsername());
-                    ChatLogger.getInstance().logLogin(u.getUsername());
-                } else {
-                    conn.send(json("type","register_fail","msg","username already exists"));
-                }
-                break;
-            }
-
-            case "text": {
-                User u = sessions.get(conn);
-                if (u == null) { conn.close(1008,"Not authed"); return; }
-                String content = safeStr(map.get("content"));
-                if (content.isEmpty()) return;
-                long ts = System.currentTimeMillis();
-
-                // Aquí podrías persistir si quieres: userDAO.saveMessage(u.getUsername(), content, ts);
-
-                // Broadcast en formato JSON para el frontend JS (incluye al remitente)
-                broadcastJson(json(
-                    "type","text",
-                    "from", u.getUsername(),
-                    "content", content,
-                    "timestamp", ts
-                ));
-                ChatLogger.getInstance().logText(u.getUsername(), content);
-                break;
-            }
-
-            case "file": {
-                User u = sessions.get(conn);
-                if (u == null) { conn.close(1008,"Not authed"); return; }
-                
-                String filename = safeStr(map.get("filename"));
-                String mimetype = safeStr(map.get("mimetype"));
-                Object data = map.get("data");
-                Object size = map.get("size");
-                long ts = System.currentTimeMillis();
-                
-                if (filename.isEmpty() || data == null) {
-                    conn.send(json("type","error","msg","Archivo inválido"));
-                    return;
-                }
-                
-                System.out.println("📎 Archivo recibido de " + u.getUsername() + 
-                                   ": " + filename + " (" + mimetype + ", " + size + " bytes)");
-                ChatLogger.getInstance().logFile(u.getUsername(), filename);
-                // Persistir acción FILE con bytes y metadatos
-                try {
-                    Integer uid = actionDAO.getUserIdByUsername(u.getUsername());
-                    long declaredSize = 0L;
-                    if (size instanceof Number) declaredSize = ((Number)size).longValue();
-                    String b64 = data instanceof String ? (String) data : String.valueOf(data);
-                    byte[] bytes = Base64.getDecoder().decode(b64);
-                    long actionId = actionDAO.insertAction("FILE", "global", uid, false);
-                    actionDAO.insertFileDetails(actionId, filename, mimetype, declaredSize, bytes);
-                } catch (IllegalArgumentException ex) {
-                    ChatLogger.getInstance().logError("Base64 inválido para archivo: " + filename);
-                }
-                
-                // Broadcast del archivo a todos EXCEPTO al remitente
-                String payload = json(
-                    "type", "file",
-                    "from", u.getUsername(),
-                    "filename", filename,
-                    "mimetype", mimetype,
-                    "size", size,
-                    "data", data,
-                    "timestamp", ts
-                );
-                
-                for (WebSocket c : sessions.keySet()) {
-                    // Enviar solo si NO es el remitente
-                    if (c.isOpen() && c != conn) {
-                        c.send(payload);
-                    }
-                }
-                break;
-            }
-
-            // ========== Videollamada Grupal ==========
-            case "join_room": {
-                User u = sessions.get(conn);
-                if (u == null) { conn.close(1008,"Not authed"); return; }
-                
-                String username = u.getUsername();
-                
-                // Enviar lista de usuarios ya en la sala al nuevo usuario
-                List<String> currentRoomUsers = new ArrayList<>(videoRoomUsers.keySet());
-                conn.send(json("type", "room_users", "users", currentRoomUsers));
-                
-                // Agregar usuario a la sala
-                boolean wasEmpty = videoRoomUsers.isEmpty();
-                videoRoomUsers.put(username, conn);
-                if (wasEmpty) {
-                    ChatLogger.getInstance().logVideoStart();
-                }
-                ChatLogger.getInstance().logVideoJoin(username);
-                
-                // Notificar a todos los demás que un nuevo usuario se unió
-                for (Map.Entry<String, WebSocket> entry : videoRoomUsers.entrySet()) {
-                    if (!entry.getKey().equals(username) && entry.getValue().isOpen()) {
-                        entry.getValue().send(json("type", "user_joined", "username", username));
-                    }
-                }
-                
-                System.out.println("📹 " + username + " se unió a la videollamada. Total: " + videoRoomUsers.size());
-                break;
-            }
-
-            case "leave_room": {
-                User u = sessions.get(conn);
-                if (u == null) return;
-                
-                String username = u.getUsername();
-                videoRoomUsers.remove(username);
-                ChatLogger.getInstance().logVideoLeave(username);
-                
-                // Notificar a todos que el usuario salió
-                for (WebSocket c : videoRoomUsers.values()) {
-                    if (c.isOpen()) {
-                        c.send(json("type", "user_left", "username", username));
-                    }
-                }
-                if (videoRoomUsers.isEmpty()) {
-                    ChatLogger.getInstance().logVideoEnd();
-                }
-                System.out.println("📹 " + username + " salió de la videollamada. Total: " + videoRoomUsers.size());
-                break;
-            }
-
-            case "webrtc_offer": {
-                User u = sessions.get(conn);
-                if (u == null) { conn.close(1008,"Not authed"); return; }
-                
-                String to = safeStr(map.get("to"));
-                Object offer = map.get("offer");
-                
-                WebSocket targetConn = videoRoomUsers.get(to);
-                if (targetConn != null && targetConn.isOpen()) {
-                    targetConn.send(json(
-                        "type", "webrtc_offer",
-                        "from", u.getUsername(),
-                        "offer", offer
-                    ));
-                }
-                break;
-            }
-
-            case "webrtc_answer": {
-                User u = sessions.get(conn);
-                if (u == null) { conn.close(1008,"Not authed"); return; }
-                
-                String to = safeStr(map.get("to"));
-                Object answer = map.get("answer");
-                
-                WebSocket targetConn = videoRoomUsers.get(to);
-                if (targetConn != null && targetConn.isOpen()) {
-                    targetConn.send(json(
-                        "type", "webrtc_answer",
-                        "from", u.getUsername(),
-                        "answer", answer
-                    ));
-                }
-                break;
-            }
-
-            case "webrtc_ice": {
-                User u = sessions.get(conn);
-                if (u == null) { conn.close(1008,"Not authed"); return; }
-                
-                String to = safeStr(map.get("to"));
-                Object candidate = map.get("candidate");
-                
-                WebSocket targetConn = videoRoomUsers.get(to);
-                if (targetConn != null && targetConn.isOpen()) {
-                    targetConn.send(json(
-                        "type", "webrtc_ice",
-                        "from", u.getUsername(),
-                        "candidate", candidate
-                    ));
-                }
-                break;
-            }
-
-            case "logout": {
-                User u = sessions.get(conn);
-                if (u != null) {
-                    ChatLogger.getInstance().logLogout(u.getUsername());
-                }
-                conn.close(1000, "bye");
-                break;
-            }
-
-            default:
-                conn.send(json("type","error","msg","unknown type: " + type));
-        }
+        dispatcher.dispatch(messageContext, conn, type, map);
     }
 
     private void handleBinary(WebSocket conn, ByteBuffer bytes) {
         User u = sessions.get(conn);
-        if (u == null) { conn.close(1008,"Not authed"); return; }
-        // Versión simple: reenvía el binario tal cual a todos los conectados
+        if (u == null) { 
+            conn.close(1008,"Not authed"); 
+            return; 
+        }
         for (WebSocket c : sessions.keySet()) {
             if (c.isOpen()) c.send(bytes);
         }
-    }
-
-    // ==================== Utilidades ====================
-
-    private String json(Object... kv) {
-        Map<String,Object> m = new LinkedHashMap<>();
-        for (int i = 0; i + 1 < kv.length; i += 2) {
-            m.put(String.valueOf(kv[i]), kv[i+1]);
-        }
-        return gson.toJson(m);
-    }
-
-    private List<String> currentUsers() {
-        ArrayList<String> list = new ArrayList<>();
-        for (User u : sessions.values()) list.add(u.getUsername());
-        Collections.sort(list);
-        return list;
-    }
-
-    private void broadcastJson(String payload) {
-        for (WebSocket c : sessions.keySet()) if (c.isOpen()) c.send(payload);
-    }
-
-    private static String safeStr(Object o) {
-        return (o == null) ? "" : String.valueOf(o).trim();
     }
 }

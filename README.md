@@ -1,3 +1,294 @@
+# NextTalk — Chat en Tiempo Real (v2)
+
+![Java](https://img.shields.io/badge/Java-24-orange)
+![JavaScript](https://img.shields.io/badge/JavaScript-ES6-yellow)
+![WebSocket](https://img.shields.io/badge/WebSocket-Real--Time-blue)
+![WebRTC](https://img.shields.io/badge/WebRTC-P2P-green)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-blue)
+![Maven](https://img.shields.io/badge/Maven-Build-red)
+
+## Descripción
+
+NextTalk es una aplicación de mensajería en tiempo real que soporta:
+- Autenticación y registro de usuarios.
+- Mensajería de texto y transferencia de archivos.
+- Videollamadas grupales con WebRTC (topología mesh).
+
+El backend fue rediseñado con principios SOLID y una ruta única de persistencia mediante un servicio de auditoría que registra todas las acciones en MySQL. El frontend usa ES6 modules y CSS modular.
+
+---
+
+## Arquitectura
+
+### Backend (Java)
+- `WebSocketServer` del proyecto [Java-WebSocket]. El servidor (`ChatWebSocketServer`) se limita a:
+  - Ciclo de vida de conexiones (abrir/cerrar/errores).
+  - Despachar mensajes entrantes a handlers especializados.
+- `MessageDispatcher` + `ServerMessageHandler` (Strategy): cada tipo de mensaje tiene un handler dedicado en `server.service.handlers`.
+- `MessageContext`: entrega a los handlers el estado compartido (sesiones, usuarios en video), servicios (DAO, `AuditService`) y utilidades (JSON, broadcast).
+- `AuditService`: única fuente de persistencia. Registra `SYSTEM`, `LOGIN`, `LOGOUT`, `TEXT`, `FILE`, `VIDEO_JOIN`, `VIDEO_LEAVE` y detalles en tablas normalizadas.
+- DAO stateless (`UserDAO`, `ActionDAO`): cada método abre/cierra su propia `Connection` desde un `DataSource` (via `DBConnection`).
+
+Handlers incluidos:
+- `AuthHandler`, `RegisterHandler`, `LogoutHandler`
+- `TextHandler`, `FileHandler`
+- `JoinRoomHandler`, `LeaveRoomHandler`
+- `WebRTCOfferHandler`, `WebRTCAnswerHandler`, `WebRTCIceHandler`
+
+Ruta de persistencia única:
+- Todos los registros de acciones pasan por `AuditService`.
+- El manejo de archivos y su persistencia se realiza exclusivamente en `FileHandler` (evita duplicidades).
+
+### Frontend (JavaScript)
+- ES6 modules (sin frameworks) bajo `frontend/frontend`.
+- Gestores (Singleton): `UIManager`, `WebSocketManager`, `FileManager`, `VideoCallManager`.
+- `MessageHandler` (Strategy) para procesar mensajes del servidor.
+- CSS modular con carga paralela por múltiples `<link>`.
+
+---
+
+## Estructura de Proyecto
+
+```
+PC3/
+├── src/main/java/server/
+│   ├── Config.java
+│   ├── MainServer.java
+│   ├── ChatWebSocketServer.java
+│   ├── dao/
+│   │   ├── DBConnection.java
+│   │   ├── UserDAO.java
+│   │   └── ActionDAO.java
+│   ├── model/
+│   │   └── User.java
+│   └── service/
+│       ├── AuditService.java
+│       ├── MessageContext.java
+│       ├── MessageDispatcher.java
+│       ├── ServerMessageHandler.java
+│       └── handlers/
+│           ├── AuthHandler.java
+│           ├── RegisterHandler.java
+│           ├── LogoutHandler.java
+│           ├── TextHandler.java
+│           ├── FileHandler.java
+│           ├── JoinRoomHandler.java
+│           ├── LeaveRoomHandler.java
+│           ├── WebRTCOfferHandler.java
+│           ├── WebRTCAnswerHandler.java
+│           └── WebRTCIceHandler.java
+├── frontend/frontend/
+│   ├── index.html
+│   ├── app.js
+│   ├── js/
+│   │   ├── config.js
+│   │   ├── ChatApplication.js
+│   │   ├── handlers/MessageHandler.js
+│   │   ├── managers/(UIManager|WebSocketManager|FileManager|VideoCallManager).js
+│   │   └── utils/(DOMUtils.js|FileUtils.js)
+│   └── styles/
+│       ├── _variables.css, _base.css, utilities.css, responsive.css
+│       ├── layout/chat-layout.css
+│       ├── components/(messages.css, files.css)
+│       └── features/(auth.css, video-call.css)
+├── database/create_tables.sql
+├── pom.xml
+├── README.md
+└── REGISTRO_USUARIOS.md
+```
+
+---
+
+## Requisitos
+
+- Java JDK 24+
+- Maven 3.x
+- MySQL 8.0+
+- Navegador moderno (Chrome/Firefox/Edge)
+- Visual Studio Code (recomendado) + extensión Live Server
+
+---
+
+## Configuración Rápida
+
+### 1) Base de datos
+
+Ejecuta el script incluido (crea DB, tablas y datos de ejemplo):
+
+```powershell
+# Desde la raíz del proyecto (Windows PowerShell)
+mysql -u root -p < .\database\create_tables.sql
+```
+
+### 2) Variables de entorno (BD y servidor)
+
+El backend usa `MysqlDataSource` configurado por variables de entorno:
+
+```powershell
+# Base de datos
+$env:DB_HOST='localhost'
+$env:DB_PORT='3306'
+$env:DB_NAME='chatapp'
+$env:DB_USER='root'
+$env:DB_PASS='tu_contraseña'
+
+# Servidor Java
+$env:JAVA_HOST='localhost'
+$env:JAVA_WS_PORT='8081'
+```
+
+### 3) Compilación y ejecución
+
+```powershell
+cd C:\Users\jose\Desktop\PC3
+mvn clean compile
+mvn exec:java -Dexec.mainClass="server.MainServer"
+```
+
+El servidor inicia en: `ws://localhost:8081/`
+
+### 4) Frontend
+
+Opción A (VS Code Live Server):
+1. Abrir el proyecto en VS Code.
+2. Abrir `frontend/frontend/index.html` y seleccionar “Open with Live Server”.
+3. Navegar a `http://localhost:5500/frontend/frontend/index.html`.
+
+Opción B (HTTP simple):
+```powershell
+cd .\frontend\frontend
+python -m http.server 5500
+```
+
+---
+
+## Configuración Centralizada
+
+- Backend: `server.Config` lee `JAVA_HOST` y `JAVA_WS_PORT`.
+- Frontend: `frontend/frontend/js/config.js` calcula `wsUrl` automáticamente y permite overrides con `localStorage`:
+
+```js
+localStorage.setItem('WS_HOST', '192.168.1.50');
+localStorage.setItem('WS_PORT', '9090');
+location.reload();
+```
+
+---
+
+## Modelo de Datos (Auditoría)
+
+Historial normalizado en 3 tablas. Todas las inserciones pasan por `AuditService`:
+
+```sql
+CREATE TABLE actions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  action_type ENUM('SYSTEM','LOGIN','LOGOUT','TEXT','FILE','VIDEO_JOIN','VIDEO_LEAVE') NOT NULL,
+  room VARCHAR(64) NOT NULL DEFAULT 'global',
+  actor_user_id INT NULL,
+  server_generated BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE action_text_details (
+  action_id BIGINT PRIMARY KEY,
+  content TEXT NOT NULL,
+  content_length INT NOT NULL,
+  FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE action_file_details (
+  action_id BIGINT PRIMARY KEY,
+  filename VARCHAR(255) NOT NULL,
+  mimetype VARCHAR(128) NOT NULL,
+  size BIGINT NOT NULL,
+  data LONGBLOB NOT NULL,
+  FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE
+);
+```
+
+Reglas clave:
+- Se registra solo el envío del emisor (no duplicar por recepción).
+- Archivos se guardan con bytes y metadatos en `FileHandler` vía `AuditService`.
+- Acciones de sistema se marcan con `server_generated = TRUE`.
+
+---
+
+## Protocolo de Mensajes
+
+Cliente → Servidor:
+- `auth`: `{ type, username, password }`
+- `register`: `{ type, username, fullName, password }`
+- `text`: `{ type, content }`
+- `file`: `{ type, filename, mimetype, size, data(base64) }`
+- `join_room` / `leave_room`
+- `webrtc_offer` / `webrtc_answer` / `webrtc_ice`
+- `logout`
+
+Servidor → Cliente (ejemplos):
+- `auth_ok`, `register_ok`
+- `userlist`: `{ type, users: [...] }`
+- `text`: `{ type, from, content, timestamp }`
+- `file`: `{ type, from, filename, mimetype, size, data, timestamp }`
+- `user_joined`, `user_left`, `room_users`
+- Señalización WebRTC: `webrtc_*`
+
+---
+
+## Seguridad
+
+Implementado:
+- SQL con `PreparedStatement` (prevención de inyección).
+- Validación de credenciales y unicidad de sesión por usuario.
+- Validaciones básicas de payload.
+
+Recomendado para producción:
+- Hash de contraseñas (bcrypt/Argon2).
+- HTTPS/WSS y políticas CORS.
+- Rate limiting y límites de tamaño de archivo.
+- JWT para sesiones y expiración de sesión.
+
+---
+
+## Rendimiento
+
+- Estructuras concurrentes (`ConcurrentHashMap`).
+- Broadcast selectivo (archivos no se reenvían al remitente).
+- Thread pool para manejo de mensajes.
+
+---
+
+## Desarrollo y Pruebas
+
+Backend:
+```powershell
+mvn -q -DskipTests=false test
+```
+
+Frontend (propuesto): Jest/Playwright según necesidades.
+
+Guía de estilo:
+- Java: nombres descriptivos, JavaDoc en públicos.
+- JS: ES6, const/let, JSDoc donde aplique.
+
+---
+
+## Créditos y Licencia
+
+Proyecto académico — Lenguaje de Programación 2 (UNI, 2025-I).
+Uso educativo únicamente. No apto para producción sin endurecimiento de seguridad.
+
+Equipo:
+- Jose Rojas
+- Isabel Ávila
+- Mauricio Chinchayhura
+- Frabicio Zúñiga
+
+---
+
+Última actualización: 14 de Noviembre, 2025  
+Versión: 2.0.0  
+Estado: Estable para desarrollo
+
 # NextTalk - Sistema de Chat en Tiempo Real
 
 ![Java](https://img.shields.io/badge/Java-24-orange)
@@ -8,7 +299,7 @@
 
 ## 📋 Descripción del Proyecto
 
-**NextTalk** es una aplicación de mensajería en tiempo real desarrollada como proyecto académico para el curso de Lenguaje de Programación 2. Permite comunicación instantánea mediante texto, transferencia de archivos y videollamadas grupales usando WebRTC, con arquitectura modular (JS y CSS), configuración centralizada y logging a archivos para facilitar despliegue y mantenimiento.
+**NextTalk** es una aplicación de mensajería en tiempo real desarrollada como proyecto académico para el curso de Lenguaje de Programación 2. Permite comunicación instantánea mediante texto, transferencia de archivos y videollamadas grupales usando WebRTC, con arquitectura modular (JS y CSS), configuración centralizada y persistencia de acciones en base de datos MySQL (en lugar de logs en archivos).
 
 ### Características Principales
 
@@ -20,7 +311,7 @@
 - 🎨 **Interfaz moderna** responsive con ventana flotante de videollamada
 - 🏗️ **Arquitectura modular** (JS y CSS) implementando patrones de diseño profesionales
 - ⚙️ **Configuración centralizada** de host/puertos (Java y JS)
-- 🪵 **Logging** a archivos .txt con rotación por sesión
+- 🪵 **Persistencia de acciones** en MySQL (acciones, textos y archivos)
 
 ---
 
@@ -43,7 +334,7 @@
 - **WebRTC API** - Comunicación peer-to-peer para video
 
 #### Base de Datos
-- **MySQL 8.0** - Almacenamiento de usuarios y datos persistentes
+- **MySQL 8.0** - Almacenamiento de usuarios y acciones (historial)
 
 ### Patrones de Diseño Implementados y Mapeo
 
@@ -57,7 +348,8 @@
 - Facade
   - `ChatApplication` orquesta managers y listeners UI/WS
 - DAO
-  - `UserDAO` y `DBConnection` aíslan acceso a datos (MySQL)
+  - `UserDAO`, `ActionDAO` y `DBConnection` aíslan acceso a datos (MySQL)
+  - DAOs son stateless (cada método abre/cierra su propia `Connection` desde un `DataSource`)
 - Utilidades/Abstracciones
   - `server.Config` (Java) y `frontend/js/config.js` (JS) centralizan configuración
 
@@ -68,43 +360,34 @@
 ```
 PC3/
 ├── src/
-│   ├── main/java/
-│   │   ├── client/
-│   │   └── server/
-│   │       ├── Config.java            # Config central (host/puertos) via env
-│   │       ├── ChatWebSocketServer.java
-│   │       ├── MainServer.java
-│   │       ├── dao/
-│   │       │   ├── DBConnection.java
-│   │       │   └── UserDAO.java
-│   │       ├── model/ (User, Message, TextMessage, FileMessage)
-│   │       ├── util/ChatLogger.java   # Logger a archivos TXT en logs/
-│   │       └── view/ServerViewConsole.java
-│   └── test/java/
+│   └── main/java/server/
+│       ├── Config.java                # Config central (host/puertos) via env
+│       ├── ChatWebSocketServer.java   # Servidor WS (texto, archivos, WebRTC)
+│       ├── MainServer.java            # Entry point; verifica BD y arranca WS
+│       ├── dao/
+│       │   ├── DBConnection.java      # Singleton con MysqlDataSource (env)
+│       │   ├── UserDAO.java           # Autenticación y registro (stateless)
+│       │   └── ActionDAO.java         # Acciones + detalles (stateless)
+│       ├── model/
+│       │   └── User.java
+│       └── util/
+│           └── ChatLogger.java        # Registra acciones en BD (no archivos)
 ├── frontend/frontend/
 │   ├── js/
 │   │   ├── config.js                  # Config FE: protocolo/host/puerto (WS)
 │   │   ├── ChatApplication.js         # Facade principal
 │   │   ├── handlers/MessageHandler.js
-│   │   ├── managers/
-│   │   │   ├── UIManager.js
-│   │   │   ├── WebSocketManager.js
-│   │   │   ├── FileManager.js
-│   │   │   └── VideoCallManager.js
+│   │   ├── managers/(UI/WebSocket/File/VideoCall)
 │   │   └── utils/(DOMUtils.js, FileUtils.js)
 │   ├── styles/
-│   │   ├── _variables.css
-│   │   ├── _base.css
+│   │   ├── _variables.css, _base.css
 │   │   ├── layout/chat-layout.css
 │   │   ├── components/(messages.css, files.css)
 │   │   ├── features/(auth.css, video-call.css)
-│   │   ├── utilities.css
-│   │   ├── responsive.css
-│   │   └── main.css                   # Punto de entrada CSS (imports)
-│   ├── index.html
-│   └── app.js                         # Entry mínimo (módulos ES6)
+│   │   ├── utilities.css, responsive.css
+│   ├── index.html                     # Carga estilos con múltiples <link>
+│   └── app.js                         # Entrada (ES6 modules)
 ├── database/create_tables.sql
-├── logs/                              # Archivos de log (gitignored)
 ├── pom.xml
 ├── REGISTRO_USUARIOS.md
 └── README.md
@@ -156,15 +439,22 @@ CREATE TABLE users (
 
 ### 2. Configurar Conexión a BD
 
-Editar `src/main/java/server/dao/DBConnection.java`:
+El backend usa `MysqlDataSource` con variables de entorno (no es necesario editar código):
 
-```java
-private DBConnection() throws SQLException {
-    String url = "jdbc:mysql://localhost:3306/chatapp?useSSL=false&serverTimezone=UTC";
-    String user = "root";           // Tu usuario MySQL
-    String pass = "tu_contraseña";  // Tu contraseña MySQL
-    conn = DriverManager.getConnection(url, user, pass);
-}
+- `DB_HOST` (por defecto: `localhost`)
+- `DB_PORT` (por defecto: `3306`)
+- `DB_NAME` (por defecto: `chatapp`)
+- `DB_USER` (por defecto: `root`)
+- `DB_PASS` (por defecto: `cambiar_me`)
+
+Ejemplo en Windows PowerShell:
+
+```powershell
+$env:DB_HOST='localhost'
+$env:DB_PORT='3306'
+$env:DB_NAME='chatapp'
+$env:DB_USER='root'
+$env:DB_PASS='tu_contraseña'
 ```
 
 ### 3. Compilar y Ejecutar el Servidor
@@ -176,16 +466,15 @@ cd C:\Users\jose\Desktop\PC3
 # Compilar el proyecto
 mvn clean compile
 
-# Ejecutar el servidor (valores por defecto: host=localhost, TCP=5340, WS=8081)
+# Ejecutar el servidor (valores por defecto: host=localhost, WS=8081)
 mvn exec:java -Dexec.mainClass="server.MainServer"
 
 # Opcional: configurar host/puertos por variables de entorno (Windows PowerShell)
 # (Usado por server.Config)
-$env:JAVA_HOST='192.168.1.50'; $env:JAVA_TCP_PORT='5555'; $env:JAVA_WS_PORT='9090'; mvn exec:java -Dexec.mainClass="server.MainServer"
+$env:JAVA_HOST='192.168.1.50'; $env:JAVA_WS_PORT='9090'; mvn exec:java -Dexec.mainClass="server.MainServer"
 ```
 El servidor iniciará en:
 - **WebSocket**: `ws://localhost:8081/`
-- **TCP**: `localhost:5340` (legacy)
 
 ### 4. Iniciar el Frontend
 
@@ -205,13 +494,12 @@ python -m http.server 5500
 
 ## ⚙️ Configuración Centralizada (Host/Puertos)
 
-### Backend (Java)
+#### Backend (Java)
 - Clase: `server.Config`
 - Variables de entorno soportadas:
   - `JAVA_HOST` (por defecto: `localhost`)
-  - `JAVA_TCP_PORT` (por defecto: `5340`)
   - `JAVA_WS_PORT` (por defecto: `8081`)
-- Uso interno: `MainServer`, `ChatWebSocketServer` y `client/core/ClientMain` consumen estos valores.
+- Uso interno: `MainServer` y `ChatWebSocketServer` consumen estos valores.
 
 ### Frontend (JS)
 - Módulo: `frontend/frontend/js/config.js`
@@ -285,25 +573,42 @@ location.reload();
 
 #### MainServer.java
 Punto de entrada principal que:
-- Inicia servidor WebSocket en puerto 8081
-- Inicia servidor TCP legacy en puerto 5340
-- Gestiona conexiones concurrentes con hilos
+- Verifica conectividad con la base de datos (abre/cierra una `Connection`)
+- Inicia servidor WebSocket en puerto configurado (`JAVA_WS_PORT`)
 
 #### ChatWebSocketServer.java
 Servidor WebSocket que maneja:
 - **Autenticación**: `{type: "auth", username, password}`
 - **Registro**: `{type: "register", username, fullName, password}`
 - **Mensajes de texto**: `{type: "text", content}`
-- **Archivos**: `{type: "file", filename, data, mimetype}`
+- **Archivos**: `{type: "file", filename, data, mimetype}` (se persisten bytes y metadatos en BD)
 - **Videollamadas**: `join_room`, `leave_room`, `webrtc_offer`, `webrtc_answer`, `webrtc_ice`
 - **Logout**: `{type: "logout"}`
 
 #### UserDAO.java
-Acceso a datos de usuarios:
+Acceso a datos de usuarios (stateless, por método):
 ```java
 User authenticate(String username, String password)
 User registerUser(String username, String fullName, String password)
 ```
+
+#### ActionDAO.java
+Persistencia de acciones e información detallada:
+```java
+long insertAction(String actionType, String room, Integer actorUserId, boolean serverGenerated)
+void insertTextDetails(long actionId, String content)
+void insertFileDetails(long actionId, String filename, String mimetype, long size, byte[] data)
+Integer getUserIdByUsername(String username)
+```
+
+#### DBConnection.java
+Singleton que provee un `DataSource` (`MysqlDataSource`) y entrega nuevas `Connection` por llamada.
+Configurable por variables de entorno (`DB_*`).
+
+#### ChatLogger.java
+Logger semántico que ahora registra en BD (tabla `actions` y tablas de detalle). Evita duplicados:
+- Acciones `TEXT`/`LOGIN`/`LOGOUT`/`VIDEO_*` se registran como eventos con detalles cuando corresponde.
+- Archivos (`FILE`) no se registran desde el logger; se registran desde `ChatWebSocketServer` con bytes y metadatos.
 
 ### Frontend - Cliente JavaScript
 
@@ -387,6 +692,47 @@ handleWebRTCOffer(msg)             // Oferta WebRTC
 - ⚠️ **Validación de archivos**: Escaneo de malware
 - ⚠️ **CORS policies**: Restricción de orígenes
 - ⚠️ **Session timeout**: Cierre automático de sesiones inactivas
+
+---
+
+## 🗄️ Modelo de Datos: Acciones en BD
+
+Se normalizó el historial en tres tablas:
+
+```sql
+CREATE TABLE actions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  action_type ENUM('SYSTEM', 'LOGIN', 'LOGOUT', 'TEXT', 'FILE', 'VIDEO_JOIN', 'VIDEO_LEAVE') NOT NULL,
+  room VARCHAR(64) NOT NULL DEFAULT 'global',
+  actor_user_id INT NULL,
+  server_generated BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_action_type (action_type),
+  INDEX idx_created_at (created_at)
+);
+
+CREATE TABLE action_text_details (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  action_id BIGINT NOT NULL,
+  content TEXT NOT NULL,
+  content_length INT NOT NULL,
+  FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE action_file_details (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  action_id BIGINT NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  mimetype VARCHAR(128) NOT NULL,
+  size BIGINT NOT NULL,
+  data LONGBLOB NOT NULL,
+  FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE
+);
+```
+
+- El servidor solo registra el “envío” del emisor (no duplicados por recepción).
+- Los archivos se guardan con bytes y metadatos; su broadcast no incluye reenvío al remitente.
+- `ChatLogger` usa `ActionDAO` y no escribe a archivos.
 
 ---
 
@@ -512,7 +858,7 @@ Estructura de estilos dividida por propósito para facilitar mantenibilidad y es
 - `styles/features/` → vistas funcionales (auth, video-call).
 - `styles/utilities.css` → utilidades (`.muted`, etc.).
 - `styles/responsive.css` → reglas responsivas.
-- `styles/main.css` → punto de entrada con `@import` en orden de cascada seguro.
+El `index.html` carga los estilos en paralelo mediante múltiples etiquetas `<link>` para mejorar el rendimiento; no se usa un archivo agregador con `@import`.
 
 Beneficios: separación clara por dominios, menor choque de reglas, orden de carga controlado.
 
@@ -649,12 +995,11 @@ WebSocket connection to 'ws://localhost:8081/' failed
 - ⏳ Load balancing multi-servidor
 
 ---
-## 🪵 Logging
+## 🪵 Persistencia y Logging
 
-- Logger: `server/util/ChatLogger.java`
-- Escribe en `logs/chat-YYYY-MM-DD_HH-mm-ss.txt`
-- Registra: inicio/parada, auth/registro, mensajes de texto, archivos (nombre), eventos de videollamada y errores.
-- `logs/` está en `.gitignore` (igual que `target/`).
+- `ChatLogger` registra eventos en BD usando `ActionDAO`.
+- `ChatWebSocketServer` registra archivos (`FILE`) con bytes y metadatos.
+- No se generan archivos de log; todo queda en `actions` y tablas de detalle.
 
 ---
 
@@ -826,7 +1171,7 @@ R: Sí, la interfaz es responsive y WebRTC funciona en navegadores móviles.
 **Curso**: Lenguaje de Programación 2  
 **Institución**: Universidad Nacional de Ingeniería  
 **Profesor**: YAN EDUARDO CISNEROS NAPRAVNIK
-**Ciclo Académico**: 2025-I  
+**Ciclo Académico**: 2025-II  
 **Proyecto**: PC3 - Sistema de Chat en Tiempo Real
 
 ---
@@ -839,10 +1184,10 @@ Agradecimientos especiales a:
 - Java-WebSocket contributors
 - Google STUN servers
 - VS Code y extensiones utilizadas
-- Wei papu pepe
+- Wei por ser el tester
 
 ---
 
-**Última actualización**: 12 de Noviembre, 2025  
-**Versión**: 1.1.0  
+**Última actualización**: 14 de Noviembre, 2025  
+**Versión**: 2.0.0  
 **Estado**: ✅ Estable - Funcional para desarrollo

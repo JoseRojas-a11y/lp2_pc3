@@ -5,24 +5,24 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 import server.dao.DBConnection;
-import server.util.ChatLogger;
+import server.service.AuditService;
 
 public class MainServer {
     public static void main(String[] args){
         int portWS  = Config.getWsPort();
 
-        // Inicializar logger y registrar shutdown hook
-        ChatLogger logger = ChatLogger.getInstance();
+        // Inicializar auditoría y registrar shutdown hook
+        AuditService audit = new AuditService();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            logger.logInfo("Servidor apagándose (shutdown hook)");
-            logger.close();
+            audit.recordSystem("Servidor apagándose (shutdown hook)");
+            audit.recordSystem("Servidor detenido");
         }));
 
         // Probar conexión a BD antes de iniciar servidor WS
         try (Connection conn = DBConnection.getInstance().getConnection()) {
-            logger.logInfo("Conexión a BD OK: " + conn.getMetaData().getURL());
+            audit.recordSystem("Conexión a BD OK: " + conn.getMetaData().getURL());
         } catch (SQLException e) {
-            logger.logError("Fallo conectando a BD: " + e.getMessage());
+            audit.recordSystem("ERROR - Fallo conectando a BD: " + e.getMessage());
             System.err.println("No se pudo establecer conexión a la base de datos. Abortando inicio de WebSocket.");
             return;
         }
@@ -33,7 +33,7 @@ public class MainServer {
             wsServer.start();
             String wsUrl = "ws://" + Config.getHost() + ":" + portWS + "/";
             System.out.println("WebSocket activo en " + wsUrl);
-            ChatLogger.getInstance().logInfo("WebSocket activo en puerto " + portWS);
+            audit.recordSystem("WebSocket activo en puerto " + portWS);
         }).start();
     }
 }
