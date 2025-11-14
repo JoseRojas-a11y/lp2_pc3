@@ -1,104 +1,121 @@
 package server.util;
 
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.concurrent.locks.ReentrantLock;
 
+import server.dao.ActionDAO;
+
 /**
- * ChatLogger - Logger simple para registrar eventos del chat a un archivo .txt
- * Crea un archivo por ejecución en la carpeta logs/ con timestamp.
+ * ChatLogger - Adaptado para registrar eventos en base de datos (tabla actions y detalles),
+ * en lugar de archivos .txt en logs/. Conserva la API pública para minimizar cambios.
  */
 public final class ChatLogger {
     private static ChatLogger instance;
-
     private final ReentrantLock lock = new ReentrantLock(true);
-    private final Path logDir;
-    private final Path logFile;
-    private BufferedWriter writer;
+    private final ActionDAO actionDAO;
 
-    private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final DateTimeFormatter FILENAME = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
-
-    private ChatLogger() throws IOException {
-        this.logDir = Paths.get("logs");
-        if (!Files.exists(logDir)) {
-            Files.createDirectories(logDir);
+    private ChatLogger() {
+        this.actionDAO = new ActionDAO();
+        // Registrar arranque como acción del sistema
+        try {
+            lock.lock();
+            long id = actionDAO.insertAction("SYSTEM", "global", null, true);
+            actionDAO.insertTextDetails(id, "Servidor iniciado");
+        } finally {
+            lock.unlock();
         }
-        String fileName = "chat-" + LocalDateTime.now().format(FILENAME) + ".txt";
-        this.logFile = logDir.resolve(fileName);
-        this.writer = new BufferedWriter(new OutputStreamWriter(Files.newOutputStream(logFile), StandardCharsets.UTF_8));
-        writeLine("=== Servidor iniciado: " + now() + " ===");
     }
 
     public static synchronized ChatLogger getInstance() {
         if (instance == null) {
-            try {
-                instance = new ChatLogger();
-            } catch (IOException e) {
-                throw new RuntimeException("No se pudo inicializar ChatLogger", e);
-            }
+            instance = new ChatLogger();
         }
         return instance;
     }
 
-    private String now() {
-        return LocalDateTime.now().format(TS);
-    }
-
-    private void writeLine(String line) {
+    // API de logging semántico
+    public void logInfo(String msg) {
         lock.lock();
         try {
-            writer.write(line);
-            writer.newLine();
-            writer.flush();
-        } catch (IOException e) {
-            // Como último recurso, imprimir a consola
-            System.err.println("[ChatLogger] Error escribiendo log: " + e.getMessage());
+            long id = actionDAO.insertAction("SYSTEM", "global", null, true);
+            actionDAO.insertTextDetails(id, "INFO - " + (msg == null ? "" : msg));
         } finally {
             lock.unlock();
         }
     }
 
-    // API de logging semántico
-    public void logInfo(String msg) { writeLine("[" + now() + "] INFO  - " + msg); }
-    public void logError(String msg) { writeLine("[" + now() + "] ERROR - " + msg); }
+    public void logError(String msg) {
+        lock.lock();
+        try {
+            long id = actionDAO.insertAction("SYSTEM", "global", null, true);
+            actionDAO.insertTextDetails(id, "ERROR - " + (msg == null ? "" : msg));
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    public void logLogin(String username) { writeLine("[" + now() + "] LOGIN  - " + username + " ingresó"); }
-    public void logLogout(String username) { writeLine("[" + now() + "] LOGOUT - " + username + " salió"); }
+    public void logLogin(String username) {
+        lock.lock();
+        try {
+            Integer uid = actionDAO.getUserIdByUsername(username);
+            actionDAO.insertAction("LOGIN", "global", uid, false);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void logLogout(String username) {
+        lock.lock();
+        try {
+            Integer uid = actionDAO.getUserIdByUsername(username);
+            actionDAO.insertAction("LOGOUT", "global", uid, false);
+        } finally {
+            lock.unlock();
+        }
+    }
 
     public void logText(String from, String content) {
-        writeLine("[" + now() + "] MSG    - " + from + ": " + content);
-    }
-
-    public void logFile(String from, String filename) {
-        writeLine("[" + now() + "] FILE   - " + from + ": Se envió " + filename);
-    }
-
-    public void logVideoStart() { writeLine("[" + now() + "] VIDEO  - Videollamada iniciada"); }
-    public void logVideoEnd() { writeLine("[" + now() + "] VIDEO  - Videollamada finalizada"); }
-    public void logVideoJoin(String username) { writeLine("[" + now() + "] VIDEO  - " + username + " se unió a la videollamada"); }
-    public void logVideoLeave(String username) { writeLine("[" + now() + "] VIDEO  - " + username + " salió de la videollamada"); }
-
-    public synchronized void close() {
         lock.lock();
         try {
-            if (writer != null) {
-                writeLine("=== Servidor detenido: " + now() + " ===");
-                writer.flush();
-                writer.close();
-                writer = null;
-            }
-        } catch (IOException e) {
-            System.err.println("[ChatLogger] Error cerrando log: " + e.getMessage());
+            Integer uid = actionDAO.getUserIdByUsername(from);
+            long id = actionDAO.insertAction("TEXT", "global", uid, false);
+            actionDAO.insertTextDetails(id, content);
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Nota: para archivos se recomienda persistir bytes/mimetype desde el punto de recepción
+     * (p.ej. ChatWebSocketServer). Para evitar duplicados, no persiste en BD aquí.
+     */
+    public void logFile(String from, String filename) {
+        // No-op en BD para evitar duplicados; la acción FILE se guarda
+        // únicamente desde ChatWebSocketServer con bytes y metadatos.
+    }
+
+    public void logVideoStart() { logInfo("Videollamada iniciada"); }
+    public void logVideoEnd() { logInfo("Videollamada finalizada"); }
+    public void logVideoJoin(String username) {
+        lock.lock();
+        try {
+            Integer uid = actionDAO.getUserIdByUsername(username);
+            actionDAO.insertAction("VIDEO_JOIN", "global", uid, false);
+        } finally {
+            lock.unlock();
+        }
+    }
+    public void logVideoLeave(String username) {
+        lock.lock();
+        try {
+            Integer uid = actionDAO.getUserIdByUsername(username);
+            actionDAO.insertAction("VIDEO_LEAVE", "global", uid, false);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public synchronized void close() {
+        // No hay recursos de archivo que cerrar; se podría registrar parada
+        logInfo("Servidor detenido");
     }
 }

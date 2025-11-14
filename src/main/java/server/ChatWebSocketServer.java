@@ -3,6 +3,7 @@ package server;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,6 +19,7 @@ import org.java_websocket.server.WebSocketServer;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
+import server.dao.ActionDAO;
 import server.dao.UserDAO;
 import server.model.User;
 import server.util.ChatLogger;
@@ -38,11 +40,11 @@ public class ChatWebSocketServer extends WebSocketServer {
     private final ConcurrentHashMap<String, WebSocket> videoRoomUsers = new ConcurrentHashMap<>();
     private final ExecutorService pool = Executors.newCachedThreadPool();
     private final Gson gson = new Gson();
-    private final UserDAO userDAO;
+    private final UserDAO userDAO = new UserDAO();
+    private final ActionDAO actionDAO = new ActionDAO();
 
-    public ChatWebSocketServer(int port, UserDAO userDAO) {
+    public ChatWebSocketServer(int port) {
         super(new InetSocketAddress(port));
-        this.userDAO = userDAO;
     }
 
     @Override
@@ -195,6 +197,18 @@ public class ChatWebSocketServer extends WebSocketServer {
                 System.out.println("📎 Archivo recibido de " + u.getUsername() + 
                                    ": " + filename + " (" + mimetype + ", " + size + " bytes)");
                 ChatLogger.getInstance().logFile(u.getUsername(), filename);
+                // Persistir acción FILE con bytes y metadatos
+                try {
+                    Integer uid = actionDAO.getUserIdByUsername(u.getUsername());
+                    long declaredSize = 0L;
+                    if (size instanceof Number) declaredSize = ((Number)size).longValue();
+                    String b64 = data instanceof String ? (String) data : String.valueOf(data);
+                    byte[] bytes = Base64.getDecoder().decode(b64);
+                    long actionId = actionDAO.insertAction("FILE", "global", uid, false);
+                    actionDAO.insertFileDetails(actionId, filename, mimetype, declaredSize, bytes);
+                } catch (IllegalArgumentException ex) {
+                    ChatLogger.getInstance().logError("Base64 inválido para archivo: " + filename);
+                }
                 
                 // Broadcast del archivo a todos EXCEPTO al remitente
                 String payload = json(

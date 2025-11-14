@@ -1,3 +1,105 @@
+# Arquitectura NextTalk - Frontend Modular (versión actual)
+
+## Descripción
+Frontend modular en ES6 con patrones de diseño (Facade, Singleton, Observer, Strategy), configuración centralizada y CSS modular. Interactúa con el servidor por WebSocket para chat/señalización WebRTC.
+
+## Estructura de Archivos
+
+```
+frontend/frontend/
+├── app.js                       # Entry (ESM)
+├── index.html                   # Página principal
+├── js/
+│   ├── config.js                # Config FE: wsProtocol/host/port → wsUrl
+│   ├── ChatApplication.js       # Facade (orquestador)
+│   ├── handlers/
+│   │   └── MessageHandler.js    # Strategy por tipo de mensaje
+│   ├── managers/
+│   │   ├── WebSocketManager.js  # Singleton + Observer (on/emit)
+│   │   ├── UIManager.js         # Singleton (render UI)
+│   │   ├── FileManager.js       # Singleton (envío/recepción archivos)
+│   │   └── VideoCallManager.js  # Singleton (WebRTC + UI video)
+│   └── utils/
+│       ├── DOMUtils.js          # Utilidades DOM/escape/time
+│       └── FileUtils.js         # Base64/Blob/extensión/emoji
+└── styles/
+    ├── _variables.css
+    ├── _base.css
+    ├── layout/chat-layout.css
+    ├── components/
+    │   ├── messages.css
+    │   └── files.css
+    ├── features/
+    │   ├── auth.css
+    │   └── video-call.css
+    ├── utilities.css
+    ├── responsive.css
+    └── main.css                 # Punto de entrada CSS
+```
+
+Notas
+- `index.html` carga `styles/main.css` y `app.js` con `<script type="module">`.
+- La URL WS se forma en `config.js` y se usa en `WebSocketManager`.
+
+## Patrones de Diseño (mapa rápido)
+- Facade: `ChatApplication` coordina managers y eventos UI/WS.
+- Singleton: `WebSocketManager`, `UIManager`, `FileManager`, `VideoCallManager`.
+- Observer: `WebSocketManager.on('open|message|close|error', cb)` y `emit`.
+- Strategy: `MessageHandler` despacha por `message.type` (`auth_ok`, `text`, `file`, `webrtc_*`, etc.).
+
+## Módulos principales (APIs clave)
+- WebSocketManager
+  - `connect()`, `send(data)`, `on(event, cb)`, `off(event, cb)`
+  - `authenticate(user, pass)`, `register(user, full, pass)`, `logout()`
+  - Usa `CONFIG.wsUrl` de `config.js`.
+- UIManager
+  - `showLoginScreen()`, `showRegisterScreen()`, `showChatScreen(user)`
+  - `renderTextMessage(from, content, ts, isMine)`
+  - `renderFileMessage(from, filename, mimetype, base64, ts, isMine)`
+  - `renderUserList(users)`
+- FileManager
+  - `sendFile(file)` → lee, codifica Base64 y envía por WS
+  - `receiveFile(from, filename, mimetype, base64, ts)`
+- VideoCallManager
+  - `joinCall()`, `leaveCall()`, `toggleMicrophone()`, `toggleCamera()`
+  - `shareScreen()`, `toggleMaximize()`
+  - Señalización WebRTC por WS: `webrtc_offer/answer/ice`, `join_room/leave_room`
+- MessageHandler
+  - `handleMessage(msg)` → delega a UI/File/Video según `type`
+
+## Configuración (Frontend)
+- Archivo: `js/config.js`
+- Cálculo de `wsUrl` (auto `ws`/`wss` según protocolo):
+  - Overrides en runtime (DevTools):
+    ```js
+    localStorage.setItem('WS_HOST', '192.168.1.50');
+    localStorage.setItem('WS_PORT', '9090');
+    location.reload();
+    ```
+
+## UI de Videollamada (estado actual)
+- Ventana flotante, arrastrable y responsive.
+- Modo reducido: se muestra solo el participante prioritario (último que habló o primero en unirse; excluye “yo” cuando hay remotos). Sin sidebar ni scroll interno.
+- Modo maximizado: grilla con todos los participantes y controles completos.
+
+## CSS Modular
+- Capas separadas por propósito: variables/base/layout/components/features/utilities/responsive.
+- `styles/main.css` importa en orden para una cascada predecible.
+
+## Ejecución Rápida (Frontend)
+```powershell
+# Opción A: Live Server (VS Code)
+# Click derecho en frontend/frontend/index.html → Open with Live Server
+
+# Opción B: Servidor simple
+cd C:\Users\jose\Desktop\PC3\frontend\frontend
+python -m http.server 5500
+```
+
+## Notas de mantenimiento
+- Esta documentación sustituye resúmenes previos de refactorización y verificación duplicados.
+- La referencia general del proyecto (backend + frontend) está en el `README.md` del root.
+
 # Arquitectura NextChat - Frontend Modular
 
 ## Descripción General
