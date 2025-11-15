@@ -51,10 +51,10 @@ Ruta de persistencia única:
 
 ```
 PC3/
-├── src/main/java/server/
-│   ├── Config.java
-│   ├── MainServer.java
+├── backend/                      # Código Java (análogo a src/main/java/server)
 │   ├── ChatWebSocketServer.java
+│   ├── MainServer.java
+│   ├── Config.java
 │   ├── dao/
 │   │   ├── DBConnection.java
 │   │   ├── UserDAO.java
@@ -77,25 +77,65 @@ PC3/
 │           ├── WebRTCOfferHandler.java
 │           ├── WebRTCAnswerHandler.java
 │           └── WebRTCIceHandler.java
-├── frontend/frontend/
+├── frontend/                     # Frontend (ES6 modules + CSS modular)
 │   ├── index.html
 │   ├── app.js
-│   ├── js/
+│   ├── chatDetails/
 │   │   ├── config.js
 │   │   ├── ChatApplication.js
 │   │   ├── handlers/MessageHandler.js
-│   │   ├── managers/(UIManager|WebSocketManager|FileManager|VideoCallManager).js
-│   │   └── utils/(DOMUtils.js|FileUtils.js)
+│   │   ├── managers/
+│   │   │   ├── WebSocketManager.js
+│   │   │   ├── UIManager.js
+│   │   │   ├── FileManager.js
+│   │   │   └── VideoCallManager.js
+│   │   └── utils/
+│   │       ├── DOMUtils.js
+│   │       └── FileUtils.js
 │   └── styles/
-│       ├── _variables.css, _base.css, utilities.css, responsive.css
+│       ├── _variables.css
+│       ├── _base.css
 │       ├── layout/chat-layout.css
-│       ├── components/(messages.css, files.css)
-│       └── features/(auth.css, video-call.css)
-├── database/create_tables.sql
+│       ├── components/
+│       │   ├── messages.css
+│       │   └── files.css
+│       ├── features/
+│       │   ├── auth.css
+│       │   └── video-call.css
+│       ├── utilities.css
+│       └── responsive.css
+├── documentación/                # Documentación funcional y técnica
+│   ├── BACKEND_ARCHITECTURE.md   # Arquitectura backend (handlers, flujo, auditoría)
+│   ├── FRONTEND_ARCHITECTURE.md  # Arquitectura frontend (managers, patrones)
+│   ├── database/                 # Scripts SQL y notas de BD
+│   │   └── create_tables.sql
+│   └── diagrams/
+│       ├── SEQUENCE_DIAGRAMS.md  # Diagramas de secuencia (PlantUML)
+│       ├── diagrama_unificado/
+│       │   ├── unified_flow.puml
+│       │   ├── UnifiedFlowDetailed.png
+│       │   └── UnifiedFlowDetailed.svg
+│       └── diagramas_especificos/
+│           ├── auth_flow/
+│           │   └── auth_flow.puml
+│           ├── text_message/
+│           │   └── text_message.puml
+│           ├── file_transfer/
+│           │   └── file_transfer.puml
+│           ├── video_join/
+│           │   └── video_join.puml
+│           └── webrtc_signal/
+│               └── webrtc_signal.puml
 ├── pom.xml
 ├── README.md
 └── REGISTRO_USUARIOS.md
 ```
+
+Referencias rápidas:
+- Arquitectura Backend: `documentación/BACKEND_ARCHITECTURE.md`
+- Arquitectura Frontend: `documentación/FRONTEND_ARCHITECTURE.md`
+- Diagramas (secuencia / flujo unificado): `documentación/diagrams/`
+- Esquema y creación de tablas: `documentación/database/create_tables.sql`
 
 ---
 
@@ -151,12 +191,12 @@ El servidor inicia en: `ws://localhost:8081/`
 
 Opción A (VS Code Live Server):
 1. Abrir el proyecto en VS Code.
-2. Abrir `frontend/frontend/index.html` y seleccionar “Open with Live Server”.
-3. Navegar a `http://localhost:5500/frontend/frontend/index.html`.
+2. Abrir `frontend/index.html` y seleccionar “Open with Live Server”.
+3. Navegar a `http://localhost:5500/frontend/index.html`.
 
 Opción B (HTTP simple):
 ```powershell
-cd .\frontend\frontend
+cd .\frontend
 python -m http.server 5500
 ```
 
@@ -165,7 +205,7 @@ python -m http.server 5500
 ## Configuración Centralizada
 
 - Backend: `server.Config` lee `JAVA_HOST` y `JAVA_WS_PORT`.
-- Frontend: `frontend/frontend/js/config.js` calcula `wsUrl` automáticamente y permite overrides con `localStorage`:
+- Frontend: `frontend/chatDetails/config.js` calcula `wsUrl` automáticamente y permite overrides con `localStorage`:
 
 ```js
 localStorage.setItem('WS_HOST', '192.168.1.50');
