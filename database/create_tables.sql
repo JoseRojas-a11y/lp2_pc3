@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_username (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- NUEVA ESTRUCTURA PARA HISTORIAL DE INTERACCIONES
 -- Tabla principal de acciones (cada interacción registrada una sola vez)
 -- action_type define la naturaleza de la acción y se detalla en tablas secundarias cuando aplica
 CREATE TABLE IF NOT EXISTS actions (

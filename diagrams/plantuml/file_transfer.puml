@@ -1,0 +1,23 @@
+@startuml FileTransfer
+actor User as U
+participant FE
+participant "FileManager" as FM
+participant WSM
+participant S
+participant D
+participant "FileHandler" as FH
+participant AS
+
+U -> FE: Selecciona archivo
+FE -> FM: sendFile(file)
+FM -> FM: Leer + Base64 encode
+FM -> WSM: send({type:"file", filename, mimetype, size, data})
+WSM -> S: JSON file
+S -> D: dispatch("file")
+D -> FH: handle(...)
+FH -> FH: Base64 decode bytes
+FH -> AS: recordFile(username, filename, mimetype, size, bytes)
+FH -> S: broadcastExcept(sender, {type:"file", ...})
+S -> WSM: JSON file (otros usuarios)
+WSM -> FE: renderFileMessage
+@enduml

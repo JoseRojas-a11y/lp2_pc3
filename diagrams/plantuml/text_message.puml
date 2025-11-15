@@ -1,0 +1,19 @@
+@startuml TextMessage
+actor User as U
+participant FE
+participant WSM
+participant S
+participant D
+participant "TextHandler" as TH
+participant AS
+
+U -> FE: Escribe y enviar mensaje
+FE -> WSM: send({type:"text", content})
+WSM -> S: JSON text
+S -> D: dispatch("text")
+D -> TH: handle(...)
+TH -> AS: recordText(username, content)
+TH -> S: broadcast({type:"text", from, content, timestamp})
+S -> WSM: JSON text (a todos)
+WSM -> FE: render mensaje
+@enduml

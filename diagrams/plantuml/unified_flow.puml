@@ -1,0 +1,287 @@
+@startuml UnifiedFlowDetailed
+title Flujo Unificado Completo (Servidor Inicialización → Autenticación → Mensajería → Archivos → Videollamada → Logout / Cierre)
+legend top
+Este diagrama expone cada interacción sin abreviaciones:
+ - Inicialización del servidor y construcción de infraestructura
+ - Conexión WebSocket desde el cliente
+ - Registro y autenticación (casos éxito y error)
+ - Envío de mensaje de texto (persistencia acción + detalle)
+ - Transferencia de archivo (decodificación Base64 y persistencia bytes)
+ - Ingreso / salida de videollamada (inicio / fin de sala)
+ - Señalización WebRTC (oferta / respuesta / candidatos ICE)
+ - Logout explícito y cierre involuntario (onClose)
+ - Interacciones con DAOs y servicio de auditoría (insertAction, insertTextDetails, insertFileDetails)
+endlegend
+
+skinparam sequenceArrowThickness 1
+skinparam sequenceParticipant underline
+skinparam ParticipantPadding 12
+skinparam BoxPadding 10
+skinparam ArrowColor #444444
+skinparam ActorStyle awesome
+skinparam ResponseMessageColor #1D5C8C
+skinparam NoteBackgroundColor #FFFFEE
+skinparam NoteBorderColor #CCCC99
+hide footbox
+
+actor User as UserActor
+participant "Browser / Frontend\n(index.html, styles, js)" as Frontend
+participant "ChatApplication\n(Facade)" as ChatApp
+participant "WebSocketManager\n(Singleton)" as WSManager
+participant "ChatWebSocketServer\n(WebSocketServer)" as Server
+participant "Config\n(Lee JAVA_HOST / JAVA_WS_PORT)" as ConfigClass
+participant "DBConnection\n(MysqlDataSource Provider)" as DBConn
+participant "MessageDispatcher\n(Registro type→handler)" as Dispatcher
+participant "MessageContext\n(Sessions, VideoRoomUsers, DAOs, Audit)" as MsgCtx
+participant "AuditService\n(Capa dominio auditoría)" as AuditService
+participant "UserDAO\n(auth / register)" as UserDAO_P
+participant "ActionDAO\n(insertAction / details)" as ActionDAO_P
+
+box "Handlers (Strategy)" #EEEEEE
+  participant "AuthHandler" as AuthHandler_P
+  participant "RegisterHandler" as RegisterHandler_P
+  participant "TextHandler" as TextHandler_P
+  participant "FileHandler" as FileHandler_P
+  participant "JoinRoomHandler" as JoinRoomHandler_P
+  participant "LeaveRoomHandler" as LeaveRoomHandler_P
+  participant "WebRTCOfferHandler" as OfferHandler_P
+  participant "WebRTCAnswerHandler" as AnswerHandler_P
+  participant "WebRTCIceHandler" as IceHandler_P
+  participant "LogoutHandler" as LogoutHandler_P
+end box
+
+== (A) Inicialización del Servidor ==
+Server -> ConfigClass: getHost() / getWsPort()
+Server -> DBConn: getDataSource()
+DBConn -> DBConn: Crea MysqlDataSource (host, port, db, user, pass)
+Server -> AuditService: recordSystem("WebSocket server ON ws://HOST:PORT/")
+note right of AuditService
+recordSystem:
+  1) ActionDAO.insertAction("SYSTEM", room="global", actor=NULL, server_generated=TRUE)
+  2) ActionDAO.insertTextDetails(action_id, message)
+end note
+Server -> Server: Construye MessageContext(sessions, videoRoomUsers, UserDAO, ActionDAO, AuditService)
+Server -> Dispatcher: register(AuthHandler,...,LogoutHandler)
+Dispatcher -> Dispatcher: Map<type,handler> poblado
+
+== (B) Carga Frontend y Conexión WebSocket ==
+UserActor -> Frontend: Abre URL (HTTP GET)
+Frontend -> ChatApp: init()
+ChatApp -> WSManager: connect(wsUrl)
+WSManager -> Server: Handshake WebSocket (HTTP Upgrade)
+Server -> AuditService: recordSystem("Nueva conexión WS: IP:PORT")
+Server -> Server: Espera mensaje 'auth' o 'register' antes de marcar sesión
+
+== (C1) Registro de Usuario (flujo alternativo) ==
+UserActor -> Frontend: Completa formulario registro
+Frontend -> ChatApp: register(username, fullName, password)
+ChatApp -> WSManager: send({"type":"register","username":U,"fullName":F,"password":P})
+WSManager -> Server: Frame texto JSON
+Server -> Dispatcher: dispatch("register")
+Dispatcher -> RegisterHandler_P: handle(ctx,conn,payload)
+RegisterHandler_P -> UserDAO_P: registerUser(username, fullName, password)
+UserDAO_P -> DBConn: getConnection()
+UserDAO_P -> UserDAO_P: INSERT INTO users(...)
+UserDAO_P --> RegisterHandler_P: User (nuevo) | null (dup)
+alt Usuario nuevo creado
+  RegisterHandler_P -> MsgCtx: sessions.put(conn, user)
+  RegisterHandler_P -> AuditService: recordSystem("Usuario registrado: username")
+  RegisterHandler_P -> AuditService: recordLogin(username)
+  note right of AuditService
+  recordLogin:
+    ActionDAO.insertAction("LOGIN", actor_user_id=users.id)
+  end note
+  RegisterHandler_P -> Server: broadcast({"type":"userlist", users})
+  Server -> WSManager: Entrega frame userlist
+  RegisterHandler_P -> WSManager: {"type":"register_ok","username":username}
+else Username duplicado
+  RegisterHandler_P -> WSManager: {"type":"register_fail","msg":"username already exists"}
+end
+
+== (C2) Autenticación (login existente) ==
+UserActor -> Frontend: Ingresa credenciales login
+Frontend -> ChatApp: login(username,password)
+ChatApp -> WSManager: authenticate(username,password)
+WSManager -> Server: {"type":"auth","username":u,"password":p}
+Server -> Dispatcher: dispatch("auth")
+Dispatcher -> AuthHandler_P: handle(ctx,conn,payload)
+AuthHandler_P -> UserDAO_P: authenticate(username,password)
+UserDAO_P -> DBConn: getConnection()
+UserDAO_P -> UserDAO_P: SELECT * FROM users WHERE username=? AND password_hash=?
+UserDAO_P --> AuthHandler_P: User | null
+alt Credenciales válidas
+  AuthHandler_P -> MsgCtx: sessions.put(conn, user)
+  AuthHandler_P -> AuditService: recordLogin(username)
+  AuthHandler_P -> Server: broadcast({"type":"userlist", users})
+  Server -> WSManager: frame userlist
+  AuthHandler_P -> WSManager: {"type":"auth_ok","username":username}
+else Credenciales inválidas
+  AuthHandler_P -> WSManager: {"type":"auth_fail","msg":"bad credentials"}
+  AuthHandler_P -> WSManager: close(code=1008, reason="Auth failed")
+end
+
+== (D) Mensajería de Texto ==
+UserActor -> Frontend: Escribir mensaje y enviar
+Frontend -> ChatApp: sendText(content)
+ChatApp -> WSManager: send({"type":"text","content":content})
+WSManager -> Server: Frame {type:"text"}
+Server -> Dispatcher: dispatch("text")
+Dispatcher -> TextHandler_P: handle(ctx,conn,payload)
+TextHandler_P -> MsgCtx: sessions.get(conn) (verifica autenticado)
+TextHandler_P -> TextHandler_P: Validar no vacío
+TextHandler_P -> AuditService: recordText(username, content)
+note right of AuditService
+recordText:
+  1) insertAction("TEXT", actor_user_id)
+  2) insertTextDetails(action_id, content, content_length)
+end note
+TextHandler_P -> Server: broadcast({"type":"text","from":username,"content":content,"timestamp":ts})
+Server -> WSManager: Entrega broadcast a todos los clientes conectados
+WSManager -> Frontend: Invoca MessageHandler → renderTextMessage
+
+== (E) Transferencia de Archivo ==
+UserActor -> Frontend: Selecciona archivo local
+Frontend -> ChatApp: sendFile(file)
+ChatApp -> ChatApp: Leer file → ArrayBuffer
+ChatApp -> ChatApp: Convertir a Base64 (FileUtils.arrayBufferToBase64)
+ChatApp -> WSManager: send({"type":"file","filename":fn,"mimetype":mt,"size":sz,"data":b64})
+WSManager -> Server: Frame {type:"file"}
+Server -> Dispatcher: dispatch("file")
+Dispatcher -> FileHandler_P: handle(ctx,conn,payload)
+FileHandler_P -> MsgCtx: sessions.get(conn) (valida autenticado)
+FileHandler_P -> FileHandler_P: Decodificar Base64 → bytes
+FileHandler_P -> AuditService: recordFile(username, fn, mt, sz, bytes)
+note right of AuditService
+recordFile:
+  1) insertAction("FILE", actor_user_id)
+  2) insertFileDetails(action_id, filename, mimetype, size, data LONGBLOB)
+end note
+FileHandler_P -> Server: broadcastExcept(sender,{"type":"file","from":username,"filename":fn,"mimetype":mt,"size":sz,"data":b64,"timestamp":ts})
+Server -> WSManager: Entrega a todos menos remitente
+WSManager -> Frontend: renderFileMessage
+opt Error Base64 inválido
+  FileHandler_P -> AuditService: recordSystem("ERROR - Base64 inválido para archivo: fn")
+  FileHandler_P -> WSManager: {"type":"error","msg":"Archivo inválido"}
+end
+
+== (F) Ingreso a Videollamada ==
+UserActor -> Frontend: Click botón "Iniciar videollamada"
+Frontend -> ChatApp: joinCall()
+ChatApp -> WSManager: send({"type":"join_room"})
+WSManager -> Server: Frame {type:"join_room"}
+Server -> Dispatcher: dispatch("join_room")
+Dispatcher -> JoinRoomHandler_P: handle(ctx,conn,payload)
+JoinRoomHandler_P -> MsgCtx: sessions.get(conn) (obtener usuario)
+JoinRoomHandler_P -> MsgCtx: videoRoomUsers.isEmpty()?
+alt Primera persona en la sala
+  JoinRoomHandler_P -> AuditService: recordSystem("Videollamada iniciada")
+end
+JoinRoomHandler_P -> MsgCtx: videoRoomUsers.put(username, conn)
+JoinRoomHandler_P -> AuditService: recordVideoJoin(username)
+JoinRoomHandler_P -> WSManager: {"type":"room_users","users":currentRoomList}
+JoinRoomHandler_P -> Server: Notificar otros {"type":"user_joined","username":username}
+Server -> WSManager: Frame user_joined (otros clientes en sala)
+Frontend -> ChatApp: handleRoomUsers(users)
+ChatApp -> ChatApp: getUserMedia(audio+video)
+ChatApp -> ChatApp: Crear RTCPeerConnections para cada usuario previo
+ChatApp -> WSManager: send({"type":"webrtc_offer","to":peer,"offer":sdp})
+
+== (G) Señalización WebRTC (Oferta / Respuesta / ICE) ==
+WSManager -> Server: Frame {type:"webrtc_offer"}
+Server -> Dispatcher: dispatch("webrtc_offer")
+Dispatcher -> OfferHandler_P: handle(ctx,conn,payload)
+OfferHandler_P -> MsgCtx: videoRoomUsers.get(to)
+OfferHandler_P -> WSManager: {"type":"webrtc_offer","from":caller,"offer":offerSdp}
+WSManager -> ChatApp: onMessage(offer)
+ChatApp -> ChatApp: setRemoteDescription(offerSdp)
+ChatApp -> ChatApp: createAnswer() → answerSdp
+ChatApp -> WSManager: send({"type":"webrtc_answer","to":caller,"answer":answerSdp})
+WSManager -> Server: Frame {type:"webrtc_answer"}
+Server -> Dispatcher: dispatch("webrtc_answer")
+Dispatcher -> AnswerHandler_P: handle(ctx,conn,payload)
+AnswerHandler_P -> MsgCtx: videoRoomUsers.get(to)
+AnswerHandler_P -> WSManager: {"type":"webrtc_answer","from":callee,"answer":answerSdp}
+WSManager -> ChatApp: setRemoteDescription(answerSdp)
+loop Exchange ICE candidates until connectivity established
+  ChatApp -> WSManager: send({"type":"webrtc_ice","to":peer,"candidate":iceCandidate})
+  WSManager -> Server: Frame {type:"webrtc_ice"}
+  Server -> Dispatcher: dispatch("webrtc_ice")
+  Dispatcher -> IceHandler_P: handle(ctx,conn,payload)
+  IceHandler_P -> MsgCtx: videoRoomUsers.get(to)
+  IceHandler_P -> WSManager: {"type":"webrtc_ice","from":sender,"candidate":iceCandidate}
+  WSManager -> ChatApp: addIceCandidate(iceCandidate)
+end
+
+== (H) Salida de Videollamada Manual ==
+UserActor -> Frontend: Click "Salir de videollamada"
+Frontend -> ChatApp: leaveCall()
+ChatApp -> WSManager: send({"type":"leave_room"})
+WSManager -> Server: Frame {type:"leave_room"}
+Server -> Dispatcher: dispatch("leave_room")
+Dispatcher -> LeaveRoomHandler_P: handle(ctx,conn,payload)
+LeaveRoomHandler_P -> MsgCtx: videoRoomUsers.remove(username)
+LeaveRoomHandler_P -> AuditService: recordVideoLeave(username)
+alt Sala vacía tras retirada
+  LeaveRoomHandler_P -> AuditService: recordSystem("Videollamada finalizada")
+end
+LeaveRoomHandler_P -> Server: Notificar otros {"type":"user_left","username":username}
+Server -> WSManager: Frame user_left a restantes
+
+== (I) Logout Explícito ==
+UserActor -> Frontend: Click "Logout"
+Frontend -> ChatApp: logout()
+ChatApp -> WSManager: send({"type":"logout"})
+WSManager -> Server: Frame {type:"logout"}
+Server -> Dispatcher: dispatch("logout")
+Dispatcher -> LogoutHandler_P: handle(ctx,conn,payload)
+LogoutHandler_P -> AuditService: recordLogout(username)
+LogoutHandler_P -> WSManager: close(1000, "bye")
+opt Usuario estaba en videollamada
+  LogoutHandler_P -> MsgCtx: videoRoomUsers.remove(username)
+  LogoutHandler_P -> AuditService: recordVideoLeave(username)
+  alt Sala vacía
+    LogoutHandler_P -> AuditService: recordSystem("Videollamada finalizada")
+  end
+end
+
+== (J) Cierre de Conexión Involuntario (onClose) ==
+Server -> MsgCtx: sessions.remove(conn)
+alt Usuario autenticado al cerrar
+  Server -> AuditService: recordLogout(username) [si no registrado]
+  opt Usuario estaba en videollamada
+    Server -> MsgCtx: videoRoomUsers.remove(username)
+    Server -> AuditService: recordVideoLeave(username)
+    alt Sala vacía
+      Server -> AuditService: recordSystem("Videollamada finalizada")
+    end
+  end
+  Server -> Server: broadcast({"type":"userlist", users})
+end
+
+== (K) Errores Representativos ==
+note over FileHandler_P,AuditService
+Archivo con Base64 inválido → recordSystem("ERROR - Base64 inválido...") y mensaje de error al remitente.
+end note
+note over AuthHandler_P,WSManager
+Credenciales inválidas → auth_fail + cierre código 1008.
+end note
+note over Dispatcher
+Tipo desconocido → {"type":"error","msg":"unknown type: X"}
+end note
+
+== (L) Persistencia (Detalle Interno) ==
+AuditService -> ActionDAO_P: insertAction(action_type, room, actor_user_id, server_generated)
+ActionDAO_P --> AuditService: action_id
+alt action_type == TEXT
+  AuditService -> ActionDAO_P: insertTextDetails(action_id, content, length)
+else action_type == FILE
+  AuditService -> ActionDAO_P: insertFileDetails(action_id, filename, mimetype, size, data)
+else action_type in (LOGIN, LOGOUT, VIDEO_JOIN, VIDEO_LEAVE, SYSTEM)
+  AuditService -> AuditService: No tabla detalle (solo registro base)
+end
+
+== (M) Fin del Flujo ==
+Server -> AuditService: recordSystem("Servidor apagándose...") (durante shutdown controlado)
+AuditService -> ActionDAO_P: insertAction("SYSTEM", ...)
+
+@enduml
