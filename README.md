@@ -274,7 +274,7 @@ Guía de estilo:
 
 ## Créditos y Licencia
 
-Proyecto académico — Lenguaje de Programación 2 (UNI, 2025-I).
+Proyecto académico — Lenguaje de Programación 2 (UNI, 2025-II).
 Uso educativo únicamente. No apto para producción sin endurecimiento de seguridad.
 
 Equipo:
