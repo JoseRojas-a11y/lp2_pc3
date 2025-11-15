@@ -3,9 +3,9 @@ package server.model;
 
 public class User implements java.io.Serializable {
     private static final long serialVersionUID = 1L;
-    private int id;
-    private String username;
-    private String fullName;
+    private final int id;
+    private final String username;
+    private final String fullName;
     public User(int id, String username, String fullName){
         this.id = id; this.username = username; this.fullName = fullName;
     }

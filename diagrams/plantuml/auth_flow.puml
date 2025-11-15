@@ -1,0 +1,24 @@
+@startuml AuthFlow
+actor User as U
+participant "Browser / Frontend" as FE
+participant "WebSocketManager" as WSM
+participant "ChatWebSocketServer" as S
+participant "MessageDispatcher" as D
+participant "AuthHandler" as AH
+participant "UserDAO" as UD
+participant "AuditService" as AS
+
+U -> FE: Ingresa credenciales
+FE -> WSM: authenticate(username, password)
+WSM -> S: JSON {type:"auth", username, password}
+S -> D: dispatch("auth")
+D -> AH: handle(ctx, conn, payload)
+AH -> UD: authenticate(username, password)
+UD --> AH: User|null
+AH -> AS: recordLogin(username) [si válido]
+AH -> WSM: JSON {type:"auth_ok", username}
+AH -> S: broadcast userlist
+S -> WSM: JSON {type:"userlist", users}
+WSM -> FE: notifica auth_ok + userlist
+FE -> U: Muestra pantalla de chat
+@enduml

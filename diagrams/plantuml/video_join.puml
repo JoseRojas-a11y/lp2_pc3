@@ -1,0 +1,24 @@
+@startuml VideoJoin
+actor User as U
+participant FE
+participant "VideoCallManager" as VCM
+participant WSM
+participant S
+participant D
+participant "JoinRoomHandler" as JRH
+participant AS
+
+U -> FE: Click "Unirse a llamada"
+FE -> VCM: joinCall()
+VCM -> WSM: send({type:"join_room"})
+WSM -> S: JSON join_room
+S -> D: dispatch("join_room")
+D -> JRH: handle(...)
+JRH -> JRH: wasEmpty? registrar inicio
+JRH -> AS: recordSystem("Videollamada iniciada") [si estaba vacía]
+JRH -> AS: recordVideoJoin(username)
+JRH -> S: send(conn, room_users)
+S -> WSM: JSON {type:"room_users", users}
+WMS -> VCM: handleRoomUsers(users)
+VCM -> VCM: Crear PeerConnections + getUserMedia
+@enduml

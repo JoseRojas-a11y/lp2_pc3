@@ -1,0 +1,42 @@
+@startuml WebRTCSignal
+actor Caller as C
+actor Callee as B
+participant FE_C as "Frontend Caller"
+participant VCM_C as "VideoCallManager C"
+participant WSM_C as "WSM C"
+participant FE_B as "Frontend Callee"
+participant WSM_B as "WSM B"
+participant S
+participant D
+participant "WebRTCOfferHandler" as OFH
+participant "WebRTCAnswerHandler" as ANH
+participant "WebRTCIceHandler" as ICEH
+
+== Oferta ==
+C -> FE_C: Inicia conexión P2P
+FE_C -> VCM_C: createOffer()
+VCM_C -> WSM_C: send({type:"webrtc_offer", to:B, offer})
+WSM_C -> S: JSON offer
+S -> D: dispatch("webrtc_offer")
+D -> OFH: handle(...)
+OFH -> WSM_B: JSON {type:"webrtc_offer", from:C, offer}
+WSM_B -> FE_B: onMessage(offer)
+FE_B -> FE_B: setRemoteDescription + createAnswer
+FE_B -> WSM_B: send({type:"webrtc_answer", to:C, answer})
+
+== Respuesta ==
+WSM_B -> S: JSON answer
+S -> D: dispatch("webrtc_answer")
+D -> ANH: handle(...)
+ANH -> WSM_C: JSON {type:"webrtc_answer", from:B, answer}
+WSM_C -> FE_C: onMessage(answer)
+FE_C -> FE_C: setRemoteDescription
+
+== ICE Candidates ==
+FE_C -> WSM_C: send({type:"webrtc_ice", to:B, candidate})
+WSM_C -> S: JSON ice
+S -> D: dispatch("webrtc_ice")
+D -> ICEH: handle(...)
+ICEH -> WSM_B: JSON {type:"webrtc_ice", from:C, candidate}
+WSM_B -> FE_B: addIceCandidate
+@enduml
