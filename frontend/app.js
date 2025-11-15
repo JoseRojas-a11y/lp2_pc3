@@ -10,7 +10,7 @@
  * - Facade: ChatApplication coordina todos los módulos
  */
 
-import ChatApplication from './chatDatails/ChatApplication.js';
+import ChatApplication from './chatDetails/ChatApplication.js';
 
 // Inicializar aplicación cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
