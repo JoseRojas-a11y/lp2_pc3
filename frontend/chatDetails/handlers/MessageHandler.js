@@ -19,6 +19,7 @@ class MessageHandler {
       ['register_ok', this.handleRegisterOk.bind(this)],
       ['register_fail', this.handleRegisterFail.bind(this)],
       ['userlist', this.handleUserList.bind(this)],
+      ['history', this.handleHistory.bind(this)],
       ['text', this.handleTextMessage.bind(this)],
       ['file', this.handleFileMessage.bind(this)],
       ['error', this.handleError.bind(this)],
@@ -29,6 +30,20 @@ class MessageHandler {
       ['webrtc_answer', this.handleWebRTCAnswer.bind(this)],
       ['webrtc_ice', this.handleWebRTCIce.bind(this)]
     ]);
+  }
+
+  /**
+   * Maneja historial inicial de mensajes
+   * @param {Object} message - Mensaje history con items
+   */
+  handleHistory(message) {
+    const items = Array.isArray(message.items) ? message.items : [];
+    // Reproduce cada item como si fuera mensaje normal
+    for (const it of items) {
+      // Aseguramos timestamp por compatibilidad
+      if (!it.timestamp) it.timestamp = Date.now();
+      this.handleMessage(it);
+    }
   }
 
   /**

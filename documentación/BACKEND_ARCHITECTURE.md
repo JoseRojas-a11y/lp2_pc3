@@ -179,6 +179,27 @@ public final class PingHandler implements ServerMessageHandler {
 
 ---
 
+## Reconstrucción de Historial de Chat
+Para ofrecer un chat continuo al usuario que recién se conecta se implementó:
+
+- Nueva clase de modelo: `HistoryRecord` (`type`, `username`, `content` | `filename`, `mimetype`, `size`, `dataBase64`, `timestamp`).
+- Método en `ActionDAO`: `getRecentHistory(int limit)` que realiza un `JOIN` sobre `actions`, `action_text_details` y `action_file_details` filtrando tipos `TEXT` y `FILE` y devolviendo resultados ordenados cronológicamente.
+- Modificación en `AuthHandler`: tras enviar `auth_ok` se recupera el historial (límite por defecto 200) y se envía un único mensaje: `{ type: "history", items: [ ... ] }` donde cada item replica el formato habitual de los mensajes (`text` o `file`).
+- Frontend (`MessageHandler.js`): se añadió estrategia `history` que itera sobre `items` y reutiliza `handleMessage` para renderizar cada evento.
+
+Consideraciones:
+- El historial se limita a 200 eventos para evitar sobrecarga inicial (configurable en llamada).
+- Los archivos se devuelven en base64 ya presente en la persistencia; el cliente los procesa igual que si fueran mensajes recientes.
+- La reconstrucción ocurre solo en autenticación exitosa; no se reenvía el historial a usuarios ya conectados.
+- Extensible a salas futuras usando la columna `room` en `actions`.
+
+Posibles mejoras futuras:
+- Paginación incremental (scroll y petición de más mensajes).
+- Cache en memoria de los últimos N eventos para reducir lecturas de BD.
+- Filtrado por tipo (solo texto, excluir archivos grandes).
+
+---
+
 ## Referencias de Código
 - Servidor: `src/main/java/server/ChatWebSocketServer.java`
 - Contexto y despacho: `src/main/java/server/service/(MessageContext|MessageDispatcher|ServerMessageHandler).java`
