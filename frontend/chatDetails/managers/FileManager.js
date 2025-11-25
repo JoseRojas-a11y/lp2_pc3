@@ -101,8 +101,12 @@ class FileManager {
       const blob = FileUtils.base64ToBlob(base64Data, mimetype);
       const url = FileUtils.createObjectURL(blob);
       
+      // Verificar si es propio (para historial)
+      const currentUser = this.uiManager.getCurrentUser();
+      const isMine = from === currentUser;
+
       // Renderizar en el chat
-      this.renderFile(url, filename, from, false, timestamp);
+      this.renderFile(url, filename, from, isMine, timestamp);
     } catch (err) {
       console.error('Error al recibir archivo:', err);
       this.uiManager.renderSystemMessage(`Error al recibir archivo de ${from}`);
