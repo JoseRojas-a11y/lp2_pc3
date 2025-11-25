@@ -6,7 +6,7 @@ package server;
  *  JAVA_HOST, JAVA_TCP_PORT, JAVA_WS_PORT
  */
 public final class Config {
-    private static final String DEFAULT_HOST = "localhost"; // Cambiar aquí si se desea un valor por defecto distinto
+    private static final String DEFAULT_HOST = "0.0.0.0"; // Cambiar aquí si se desea un valor por defecto distinto
     private static final int DEFAULT_WS_PORT  = 8081;
 
     private static final String HOST_VALUE;
